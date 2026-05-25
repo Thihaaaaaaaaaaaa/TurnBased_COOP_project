@@ -15,18 +15,10 @@ A real-time co-op RPG where up to 8 players upload their photo, choose a class, 
 
 ---
 
-## Deploy to Render (Free)
-
-### Step 1 — Push to GitHub
-```bash
-git init
-git add .
-git commit -m "Initial commit"
-git remote add origin https://github.com/YOUR_USERNAME/eternal-quest.git
-git push -u origin main
+## Deploying to Render (Free)
 ```
 
-### Step 2 — Create Render Web Service
+###  Create Render Web Service
 1. Go to [render.com](https://render.com) → **New → Web Service**
 2. Connect your GitHub repo
 3. Render auto-detects `render.yaml` — just click **Deploy**
@@ -39,7 +31,7 @@ git push -u origin main
 | Start Command | `npm start` |
 | Instance Type | Free |
 
-### Step 3 — Share the URL
+###  Share the URL
 Give your players the Render URL (e.g. `https://eternal-quest.onrender.com`).
 Up to 8 people can join. If full, new visitors see a "Realm Full" screen.
 

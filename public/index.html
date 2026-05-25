@@ -3,916 +3,779 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>The Eternal Quest — 8-Player Co-op RPG</title>
-<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<title>The Eternal Quest — Co-op RPG</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700;900&family=Cinzel:wght@400;500;600;700;900&family=Crimson+Pro:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
-  --gold:#d4a843;--gold-dark:#a07820;--gold-light:#f0c86a;
-  --parchment:#f5e6c8;--parchment-dark:#e8d4a0;
-  --ink:#2a1a05;--ink-light:#5a3a15;
-  --blood:#8b1a1a;
-  --shadow:rgba(0,0,0,0.7);
+  --gold:#e8c25a;--gold-dark:#9c7320;--gold-light:#ffe9a8;--gold-deep:#6b4e15;
+  --parch:#f6e8c8;--parch-dim:#cdb888;--parch-faint:#9a8a64;
+  --ink:#1a1206;--blood:#a01c1c;--blood-br:#e03838;
+  --emerald:#3ea868;--azure:#4a8fd4;--violet:#9a6fd4;--ember:#e07b2a;
+  --edge:rgba(232,194,90,.22);--edge2:rgba(232,194,90,.5);
 }
 html,body{height:100%;overflow:hidden}
-body{
-  background:#080604;
-  font-family:'Crimson Pro',serif;
-  color:var(--parchment);
-}
+body{background:#06040a;font-family:'Crimson Pro',serif;color:var(--parch);position:relative}
 
-/* ── LAYOUT ── */
-#app{display:flex;height:100vh;overflow:hidden}
-#sidebar{
-  width:220px;flex-shrink:0;
-  background:rgba(0,0,0,0.7);
-  border-right:1px solid rgba(212,168,67,0.15);
-  display:flex;flex-direction:column;overflow:hidden;
-}
+/* atmosphere */
+.atmos{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.stars{position:absolute;inset:-50%;background-image:
+  radial-gradient(1px 1px at 12% 18%,rgba(255,240,200,.9),transparent),
+  radial-gradient(1px 1px at 52% 12%,rgba(255,240,200,.95),transparent),
+  radial-gradient(2px 2px at 88% 38%,rgba(180,210,255,.8),transparent),
+  radial-gradient(1px 1px at 28% 72%,rgba(255,240,200,.6),transparent),
+  radial-gradient(1px 1px at 72% 82%,rgba(255,240,200,.7),transparent),
+  radial-gradient(2px 2px at 64% 28%,rgba(255,220,180,.7),transparent),
+  radial-gradient(1px 1px at 8% 52%,rgba(220,235,255,.7),transparent),
+  radial-gradient(1px 1px at 92% 8%,rgba(255,240,200,.9),transparent);
+  background-size:55% 55%;animation:drift 120s linear infinite;opacity:.5}
+.glow{position:absolute;left:50%;top:-20%;width:90vw;height:70vh;transform:translateX(-50%);
+  background:radial-gradient(ellipse at center,rgba(232,194,90,.1),transparent 65%);animation:breathe 9s ease-in-out infinite}
+.mist{position:absolute;inset:0;background:
+  radial-gradient(ellipse 80% 50% at 20% 0%,rgba(120,60,20,.16),transparent 60%),
+  radial-gradient(ellipse 70% 60% at 85% 100%,rgba(80,40,120,.14),transparent 60%),
+  radial-gradient(ellipse 90% 70% at 50% 50%,rgba(6,4,10,0),rgba(6,4,10,.7) 90%)}
+@keyframes drift{to{transform:translate(-12%,-10%)}}
+@keyframes breathe{0%,100%{opacity:.5}50%{opacity:.85}}
+.ember{position:absolute;bottom:-10px;border-radius:50%;background:radial-gradient(circle,#ff9d4a,transparent);box-shadow:0 0 6px var(--ember);animation:emberUp linear infinite}
+@keyframes emberUp{0%{transform:translateY(0);opacity:0}10%{opacity:.8}90%{opacity:.5}100%{transform:translateY(-100vh) translateX(30px);opacity:0}}
+@media(prefers-reduced-motion:reduce){.stars,.glow,.ember{animation:none}}
+
+/* layout */
+#app{display:flex;height:100vh;overflow:hidden;position:relative;z-index:1}
+#sidebar{width:264px;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;
+  background:linear-gradient(180deg,rgba(24,16,7,.92),rgba(12,8,3,.95));border-right:1px solid var(--edge);
+  box-shadow:inset -16px 0 30px -20px rgba(0,0,0,.9)}
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
-#scene-panel{flex:1;overflow-y:auto;padding:1.5rem;
-  background:radial-gradient(ellipse at 40% 20%,#130c02 0%,#080604 70%)}
-#bottom-panel{
-  height:220px;flex-shrink:0;
-  border-top:1px solid rgba(212,168,67,0.15);
-  background:rgba(0,0,0,0.6);
-  display:flex;flex-direction:column;
-}
+#scene{flex:1;overflow-y:auto;padding:1.8rem 2rem;background:
+  radial-gradient(ellipse 90% 60% at 50% 0%,rgba(50,32,12,.45),transparent 70%),
+  radial-gradient(ellipse at 50% 100%,rgba(30,18,40,.35),transparent 60%),linear-gradient(180deg,#0e0a05,#06040a)}
+#bottom{height:210px;flex-shrink:0;display:flex;flex-direction:column;
+  border-top:1px solid var(--edge);background:linear-gradient(180deg,rgba(16,10,4,.95),rgba(8,5,2,.97))}
 
-/* ── SCREENS ── */
-.screen{display:none;position:fixed;inset:0;z-index:100;
-  align-items:center;justify-content:center;flex-direction:column;
-  background:radial-gradient(ellipse at center top,#1a0f02,#080604);
-  padding:2rem;overflow-y:auto;}
-.screen.active{display:flex}
+/* fullscreen */
+.screen{display:none;position:fixed;inset:0;z-index:100;align-items:center;justify-content:center;flex-direction:column;
+  background:radial-gradient(ellipse 70% 80% at 50% -10%,rgba(80,50,18,.3),transparent 55%),
+  radial-gradient(ellipse at 50% 120%,rgba(60,30,90,.22),transparent 55%),linear-gradient(180deg,#0d0903,#06040a 80%);
+  padding:2rem;overflow-y:auto}
+.screen.on{display:flex;animation:fade .6s ease-out}
+@keyframes fade{from{opacity:0}to{opacity:1}}
 
-/* title */
-.title-badge{
-  font-family:'Cinzel',serif;font-size:10px;letter-spacing:7px;
-  color:var(--gold-dark);text-transform:uppercase;margin-bottom:1rem;
-}
-.game-title{
-  font-family:'Cinzel',serif;font-weight:900;
-  font-size:clamp(2.2rem,5vw,4.5rem);
-  color:var(--gold);text-align:center;line-height:1;margin-bottom:.4rem;
-}
-.game-sub{
-  font-family:'Cinzel',serif;
-  font-size:clamp(.85rem,1.8vw,1.2rem);
-  color:var(--parchment-dark);letter-spacing:3px;margin-bottom:2rem;
-}
-.divider{width:280px;height:1px;background:linear-gradient(to right,transparent,var(--gold),transparent);margin:1.2rem auto}
+.tbadge{font-family:'Cinzel',serif;font-size:11px;letter-spacing:8px;color:var(--gold);text-transform:uppercase;
+  margin-bottom:1.2rem;display:flex;align-items:center;gap:14px;text-shadow:0 0 18px rgba(232,194,90,.5)}
+.tbadge::before,.tbadge::after{content:'';width:42px;height:1px;background:linear-gradient(90deg,transparent,var(--gold))}
+.tbadge::after{background:linear-gradient(90deg,var(--gold),transparent)}
+.gtitle{font-family:'Cinzel Decorative','Cinzel',serif;font-weight:900;font-size:clamp(2.6rem,7vw,5.4rem);
+  background:linear-gradient(180deg,#fff3cf,var(--gold) 45%,var(--gold-dark));-webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;text-align:center;line-height:1;margin-bottom:.5rem;letter-spacing:1px;
+  filter:drop-shadow(0 0 40px rgba(232,194,90,.35))}
+.gsub{font-family:'Cinzel',serif;font-weight:500;font-size:clamp(.9rem,2vw,1.25rem);color:var(--parch-dim);
+  letter-spacing:5px;margin-bottom:2.2rem;text-transform:uppercase}
+.divider{width:300px;max-width:80vw;height:2px;margin:1.2rem auto;position:relative;
+  background:linear-gradient(90deg,transparent,var(--gold-dark) 30%,var(--gold) 50%,var(--gold-dark) 70%,transparent)}
+.divider::after{content:'❖';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--gold);
+  background:#0d0903;padding:0 12px;font-size:14px}
 
-/* upload */
-.upload-zone{
-  border:2px dashed var(--gold-dark);padding:1.8rem 3rem;
-  text-align:center;cursor:pointer;transition:all .3s;
-  background:rgba(212,168,67,0.04);margin-bottom:1.5rem;max-width:380px;width:100%;
-}
-.upload-zone:hover{border-color:var(--gold);background:rgba(212,168,67,0.09)}
-.upload-zone p{color:var(--parchment-dark);font-size:.95rem}
-.upload-zone strong{color:var(--gold)}
-#file-input{display:none}
-.portrait-wrap{
-  width:110px;height:110px;border-radius:50%;overflow:hidden;
-  border:2px solid var(--gold);margin:0 auto 1.5rem;display:none;
-}
-.portrait-wrap img{width:100%;height:100%;object-fit:cover}
+.upload{position:relative;border:2px dashed var(--gold-dark);border-radius:14px;padding:2rem 3.2rem;text-align:center;
+  cursor:pointer;transition:.3s;background:radial-gradient(ellipse,rgba(232,194,90,.06),rgba(0,0,0,.2));margin-bottom:1.4rem;max-width:400px;width:100%}
+.upload:hover{border-color:var(--gold);transform:translateY(-3px);box-shadow:0 12px 40px -16px rgba(232,194,90,.5)}
+.upload .rune{font-size:2.4rem;display:block;margin-bottom:.6rem;filter:drop-shadow(0 0 14px rgba(232,194,90,.6));animation:bob 3s ease-in-out infinite}
+@keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.upload strong{color:var(--gold-light);font-family:'Cinzel',serif;font-weight:600;letter-spacing:1px}
+.upload p{color:var(--parch-dim);font-size:.92rem;margin-top:.2rem}
+#fileinput{display:none}
+.pwrap{position:relative;width:130px;height:130px;border-radius:50%;margin:0 auto 1.4rem;display:none;padding:4px;
+  background:conic-gradient(from 0deg,var(--gold-dark),var(--gold-light),var(--gold-dark),var(--gold),var(--gold-dark));animation:spin 8s linear infinite}
+.pwrap img{width:100%;height:100%;border-radius:50%;object-fit:cover;border:3px solid #0d0903;animation:spin 8s linear infinite reverse}
+@keyframes spin{to{transform:rotate(360deg)}}
 
-/* class grid */
-.class-grid{display:flex;gap:.7rem;flex-wrap:wrap;justify-content:center;margin-bottom:1.5rem;max-width:480px}
-.class-card{
-  border:1px solid rgba(212,168,67,0.3);padding:1rem 1.2rem;
-  cursor:pointer;transition:all .25s;min-width:100px;text-align:center;
-  background:rgba(0,0,0,0.3);
-}
-.class-card:hover,.class-card.sel{border-color:var(--gold);background:rgba(212,168,67,0.1);transform:translateY(-2px)}
-.class-card .ci{font-size:1.8rem;display:block;margin-bottom:.4rem}
-.class-card .cn{font-family:'Cinzel',serif;font-size:.8rem;color:var(--gold)}
-.class-card .cd{font-size:.7rem;color:var(--parchment-dark);margin-top:.2rem}
+.cgrid{display:flex;gap:.9rem;flex-wrap:wrap;justify-content:center;margin-bottom:1.6rem;max-width:600px}
+.ccard{position:relative;border:1px solid var(--edge);border-radius:12px;padding:1.1rem 1.3rem;cursor:pointer;transition:.3s;min-width:120px;text-align:center;
+  background:linear-gradient(160deg,rgba(40,28,12,.5),rgba(12,8,3,.6));overflow:hidden}
+.ccard:hover{border-color:var(--edge2);transform:translateY(-4px)}
+.ccard.sel{border-color:var(--gold);background:linear-gradient(160deg,rgba(232,194,90,.18),rgba(12,8,3,.6));box-shadow:0 0 0 1px var(--gold),0 12px 40px -16px rgba(232,194,90,.6)}
+.ccard .ci{font-size:2rem;display:block;margin-bottom:.4rem}
+.ccard .cn{font-family:'Cinzel',serif;font-weight:600;font-size:.86rem;color:var(--gold-light);letter-spacing:1px}
+.ccard .cd{font-size:.72rem;color:var(--parch-faint);margin-top:.3rem;line-height:1.4}
 
-/* inputs */
-.field-label{font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:2px;color:var(--gold-dark);display:block;margin-bottom:.4rem;text-transform:uppercase}
-.text-input{
-  background:rgba(0,0,0,0.5);border:1px solid rgba(212,168,67,0.35);
-  color:var(--parchment);padding:.65rem 1rem;font-family:'Crimson Pro',serif;
-  font-size:1rem;width:260px;outline:none;text-align:center;
-}
-.text-input:focus{border-color:var(--gold)}
+.flabel{font-family:'Cinzel',serif;font-weight:600;font-size:.74rem;letter-spacing:3px;color:var(--gold);display:block;margin-bottom:.55rem;text-transform:uppercase}
+.tinput{background:rgba(0,0,0,.5);border:1px solid var(--edge2);border-radius:8px;color:var(--parch);padding:.75rem 1.2rem;
+  font-family:'Crimson Pro',serif;font-size:1.05rem;width:280px;outline:none;text-align:center;transition:.25s;box-shadow:inset 0 2px 8px rgba(0,0,0,.4)}
+.tinput::placeholder{color:var(--parch-faint);font-style:italic}
+.tinput:focus{border-color:var(--gold);box-shadow:inset 0 2px 8px rgba(0,0,0,.4),0 0 0 3px rgba(232,194,90,.18)}
 
-/* buttons */
-.btn{
-  font-family:'Cinzel',serif;font-size:.85rem;letter-spacing:2px;
-  padding:.8rem 2.2rem;border:1px solid var(--gold);
-  background:rgba(212,168,67,0.08);color:var(--gold);cursor:pointer;
-  transition:all .25s;text-transform:uppercase;
-}
-.btn:hover:not(:disabled){background:rgba(212,168,67,0.18);transform:translateY(-1px)}
-.btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
-.btn-sm{padding:.5rem 1.2rem;font-size:.72rem}
-.btn-danger{border-color:#8b1a1a;color:#e07070}
-.btn-danger:hover:not(:disabled){background:rgba(139,26,26,.2)}
+.btn{position:relative;font-family:'Cinzel',serif;font-weight:600;font-size:.84rem;letter-spacing:2.2px;padding:.85rem 2.2rem;
+  border:1px solid var(--gold-dark);border-radius:8px;cursor:pointer;transition:.28s;text-transform:uppercase;overflow:hidden;
+  background:linear-gradient(180deg,rgba(70,50,20,.7),rgba(30,20,8,.85));color:var(--gold-light);text-shadow:0 1px 2px rgba(0,0,0,.7);
+  box-shadow:inset 0 1px 0 rgba(255,230,160,.12),0 4px 14px -8px rgba(0,0,0,.8)}
+.btn::after{content:'';position:absolute;top:0;left:-120%;width:60%;height:100%;transform:skewX(-18deg);
+  background:linear-gradient(105deg,transparent,rgba(255,240,200,.25),transparent);transition:left .55s}
+.btn:hover:not(:disabled){border-color:var(--gold);transform:translateY(-2px);box-shadow:inset 0 1px 0 rgba(255,230,160,.2),0 10px 28px -10px rgba(232,194,90,.55)}
+.btn:hover:not(:disabled)::after{left:130%}
+.btn:active:not(:disabled){transform:scale(.98)}
+.btn:disabled{opacity:.35;cursor:not-allowed;filter:grayscale(.4)}
+.btn-sm{padding:.5rem 1.2rem;font-size:.72rem;letter-spacing:1.4px}
+.btn-big{padding:1rem 2.8rem;font-size:1rem;border-width:2px;background:linear-gradient(180deg,rgba(95,68,26,.9),rgba(40,28,10,.92))}
+.btn-danger{border-color:var(--blood);color:#ff9a9a;background:linear-gradient(180deg,rgba(90,20,20,.7),rgba(40,8,8,.85))}
+.btn-danger:hover:not(:disabled){border-color:var(--blood-br)}
 
 /* lobby full */
-#lobby-full-screen p{text-align:center;font-size:1.1rem;margin-bottom:1rem;color:var(--parchment-dark)}
-.slot-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin:1rem 0;max-width:440px}
-.slot{
-  border:1px solid rgba(212,168,67,0.2);padding:.6rem;text-align:center;
-  font-size:.72rem;color:var(--parchment-dark);
-}
-.slot.occupied{border-color:var(--gold-dark);color:var(--gold)}
+#full h2{font-family:'Cinzel Decorative',serif;font-size:2rem;color:var(--blood-br);margin-bottom:1rem;text-shadow:0 0 24px rgba(224,56,56,.5)}
+#full p{text-align:center;font-size:1.1rem;margin-bottom:1rem;color:var(--parch-dim);line-height:1.8}
 
-/* ── SIDEBAR ── */
-#sidebar-header{
-  padding:.8rem .8rem .4rem;border-bottom:1px solid rgba(212,168,67,0.1);
-  font-family:'Cinzel',serif;font-size:.65rem;letter-spacing:3px;
-  color:var(--gold-dark);text-transform:uppercase;
-}
-#party-list{flex:1;overflow-y:auto;padding:.5rem}
-.party-member{
-  display:flex;align-items:center;gap:.5rem;
-  padding:.45rem .3rem;border-bottom:1px solid rgba(255,255,255,0.04);
-}
-.pm-portrait{
-  width:34px;height:34px;border-radius:50%;flex-shrink:0;
-  border:1.5px solid var(--gold-dark);overflow:hidden;object-fit:cover;
-  font-size:1.1rem;display:flex;align-items:center;justify-content:center;
-  background:#1a1005;
-}
-.pm-portrait img{width:100%;height:100%;object-fit:cover;border-radius:50%}
-.pm-info{flex:1;min-width:0}
-.pm-name{font-family:'Cinzel',serif;font-size:.72rem;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.pm-cls{font-size:.65rem;color:var(--parchment-dark)}
-.pm-bars{display:flex;flex-direction:column;gap:2px;margin-top:2px}
-.pm-bar{height:4px;background:rgba(255,255,255,0.08);border-radius:1px;overflow:hidden}
-.pm-bar-fill{height:100%;border-radius:1px;transition:width .4s}
-.hp-bar{background:#2d8a2d}
-.mp-bar{background:#1a5fa0}
-.pm-dead{opacity:.4}
-.pm-turn{outline:1px solid var(--gold);outline-offset:2px}
-.pm-you{position:relative}
-.pm-you::after{content:'YOU';position:absolute;top:0;right:0;font-size:.5rem;background:var(--gold);color:#000;padding:1px 3px;font-family:'Cinzel',serif}
+/* sidebar */
+#sbhead{padding:1.1rem 1rem .7rem;border-bottom:1px solid var(--edge);font-family:'Cinzel',serif;font-weight:600;
+  font-size:.68rem;letter-spacing:3px;color:var(--gold);text-transform:uppercase;text-align:center;background:linear-gradient(180deg,rgba(232,194,90,.06),transparent)}
+#sbhead::before{content:'⚜';display:block;font-size:1.1rem;color:var(--gold);margin-bottom:.3rem;text-shadow:0 0 14px rgba(232,194,90,.6)}
+#party{flex:1;overflow-y:auto;padding:.55rem .5rem}
+.pm{display:flex;align-items:center;gap:.55rem;border-radius:10px;padding:.5rem .45rem;margin-bottom:.32rem;position:relative;
+  background:linear-gradient(120deg,rgba(40,28,12,.4),transparent);border:1px solid transparent;transition:.3s}
+.pm:hover{border-color:var(--edge)}
+.pm.turn{border-color:var(--gold)!important;box-shadow:0 0 0 1px var(--gold),0 0 18px -4px rgba(232,194,90,.6);background:linear-gradient(120deg,rgba(232,194,90,.15),transparent)!important}
+.pm.dead{opacity:.42;filter:grayscale(.7)}
+.pm.dead .pmname{color:var(--blood-br)}
+.pmpic{width:40px;height:40px;border-radius:50%;flex-shrink:0;overflow:hidden;border:2px solid var(--gold-dark);object-fit:cover;
+  font-size:1.2rem;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle,#2a1c0a,#120b04)}
+.pmpic img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.pminfo{flex:1;min-width:0}
+.pmname{font-family:'Cinzel',serif;font-weight:500;font-size:.76rem;color:var(--gold-light);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pmcls{font-size:.64rem;color:var(--parch-faint);text-transform:capitalize}
+.pmbars{display:flex;flex-direction:column;gap:3px;margin-top:3px}
+.bar{height:5px;background:rgba(0,0,0,.5);border-radius:3px;overflow:hidden;box-shadow:inset 0 1px 2px rgba(0,0,0,.6)}
+.barf{height:100%;border-radius:3px;transition:width .5s}
+.hpf{background:linear-gradient(90deg,#1d5e38,var(--emerald))}
+.mpf{background:linear-gradient(90deg,#1f4d7a,var(--azure))}
+.pmstat{display:flex;gap:3px;margin-top:3px;flex-wrap:wrap}
+.you-tag{position:absolute;top:3px;right:5px;font-size:.48rem;font-family:'Cinzel',serif;font-weight:700;letter-spacing:1px;
+  background:linear-gradient(180deg,var(--gold-light),var(--gold-dark));color:#1a1206;padding:1px 4px;border-radius:3px}
+#sbfoot{padding:.9rem;border-top:1px solid var(--edge);background:linear-gradient(0deg,rgba(232,194,90,.05),transparent)}
+#shards{font-size:1.2rem;letter-spacing:4px;margin-bottom:.4rem;text-align:center;filter:drop-shadow(0 0 10px rgba(232,194,90,.5))}
+#pcount{font-size:.7rem;color:var(--parch-faint);text-align:center;font-family:'Cinzel',serif;letter-spacing:1px}
+#selfstats{font-size:.74rem;color:var(--parch-dim);margin-top:.6rem;line-height:1.7;border-top:1px solid var(--edge);padding-top:.55rem}
+.srow{display:flex;justify-content:space-between}
+.sval{color:var(--gold);font-family:'Cinzel',serif;font-weight:500}
 
-#sidebar-footer{
-  padding:.8rem;border-top:1px solid rgba(212,168,67,0.1);
-}
-#shard-display{font-size:1.1rem;letter-spacing:3px;margin-bottom:.4rem}
-#player-count-badge{font-size:.7rem;color:var(--parchment-dark)}
-#self-stats{font-size:.72rem;color:var(--parchment-dark);margin-top:.5rem;line-height:1.7}
-.stat-row{display:flex;justify-content:space-between}
-.stat-val{color:var(--gold)}
+/* scene blocks */
+.lochead{display:flex;align-items:center;gap:1rem;margin-bottom:1.3rem;padding-bottom:.9rem;border-bottom:1px solid var(--edge)}
+.locemoji{font-size:1.9rem;filter:drop-shadow(0 0 16px rgba(232,194,90,.5))}
+.locname{font-family:'Cinzel Decorative','Cinzel',serif;font-weight:700;font-size:1.4rem;
+  background:linear-gradient(180deg,#fff3cf,var(--gold));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.pbadge{font-size:.64rem;font-family:'Cinzel',serif;font-weight:600;letter-spacing:2px;padding:4px 11px;border:1px solid currentColor;border-radius:6px;text-transform:uppercase;margin-left:auto}
+.p-lobby{color:var(--gold-dark)}.p-equip{color:var(--azure)}.p-combat{color:var(--blood-br);animation:pulse 1s infinite}.p-loot{color:var(--gold)}.p-victory{color:var(--gold);animation:pulse 1.5s infinite}.p-defeat{color:var(--blood-br)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.55}}
+.narr{font-size:1.05rem;line-height:1.9;color:var(--parch);font-style:italic;padding:.3rem 0 .3rem 1.3rem;margin-bottom:1.3rem;max-width:740px;
+  border-left:2px solid transparent;border-image:linear-gradient(180deg,var(--gold),transparent) 1}
+.narr strong{color:var(--gold-light);font-style:normal;font-weight:600}
 
-/* ── SCENE ── */
-.loc-header{display:flex;align-items:center;gap:.8rem;margin-bottom:1rem}
-.loc-emoji{font-size:1.5rem}
-.loc-name{font-family:'Cinzel',serif;font-size:1.2rem;color:var(--gold)}
-.phase-badge{
-  font-size:.65rem;font-family:'Cinzel',serif;letter-spacing:2px;
-  padding:2px 8px;border:1px solid currentColor;text-transform:uppercase;margin-left:auto;
-}
-.phase-adventure{color:#2d8a2d;border-color:#2d8a2d}
-.phase-combat{color:#e07070;border-color:#e07070;animation:pulseBadge 1s ease-in-out infinite}
-.phase-lobby{color:var(--gold-dark);border-color:var(--gold-dark)}
-.phase-victory{color:var(--gold);border-color:var(--gold)}
-@keyframes pulseBadge{0%,100%{opacity:1}50%{opacity:.6}}
+/* roster (lobby) */
+.roster{display:flex;flex-wrap:wrap;gap:.7rem;margin:1rem 0;max-width:740px}
+.rcard{border:1px solid var(--edge);border-radius:12px;padding:.8rem 1rem;min-width:150px;text-align:center;background:linear-gradient(160deg,rgba(40,28,12,.45),rgba(10,7,3,.6))}
+.rcard img{width:38px;height:38px;border-radius:50%;border:1px solid var(--gold-dark);margin-bottom:.3rem;object-fit:cover}
+.rcname{font-family:'Cinzel',serif;font-weight:600;font-size:.84rem;color:var(--gold-light)}
+.rccls{font-size:.72rem;color:var(--parch-faint);margin-bottom:.4rem;text-transform:capitalize}
+.rcready{font-size:.74rem;color:var(--emerald);font-family:'Cinzel',serif;letter-spacing:1px}
+.rcnot{font-size:.74rem;color:#ff8a8a;font-family:'Cinzel',serif;letter-spacing:1px}
 
-.narrative{
-  font-size:1rem;line-height:1.9;color:var(--parchment);font-style:italic;
-  border-left:2px solid var(--gold-dark);padding-left:.9rem;margin-bottom:1.2rem;max-width:680px;
-}
-.action-grid{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;max-width:680px}
-
-/* vote zone cards */
-.zone-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.6rem;max-width:700px;margin-bottom:1rem}
-.zone-card{
-  border:1px solid rgba(212,168,67,0.25);padding:.9rem;cursor:pointer;
-  transition:all .25s;background:rgba(0,0,0,0.3);text-align:center;
-}
-.zone-card:hover:not(.cleared):not(.voted){border-color:var(--gold);background:rgba(212,168,67,0.1);transform:translateY(-2px)}
-.zone-card.cleared{opacity:.4;cursor:not-allowed;border-style:dashed}
-.zone-card.voted{border-color:var(--gold);background:rgba(212,168,67,0.15)}
-.zone-emoji{font-size:1.8rem;display:block;margin-bottom:.4rem}
-.zone-name{font-family:'Cinzel',serif;font-size:.75rem;color:var(--gold)}
-.zone-votes{font-size:.65rem;color:var(--parchment-dark);margin-top:.2rem}
+/* equip screen */
+.eqwrap{max-width:760px;width:100%}
+.eqsec{margin-bottom:1.5rem}
+.eqtitle{font-family:'Cinzel',serif;font-weight:600;font-size:.78rem;letter-spacing:2px;color:var(--gold);text-transform:uppercase;margin-bottom:.7rem;display:flex;align-items:center;gap:.5rem}
+.eqcount{font-size:.7rem;color:var(--parch-faint);font-weight:400;letter-spacing:1px}
+.abgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:.5rem}
+.abcard{position:relative;border:1px solid var(--edge);border-radius:10px;padding:.7rem .8rem;cursor:pointer;transition:.25s;
+  background:linear-gradient(150deg,rgba(40,28,12,.4),rgba(10,7,3,.5));display:flex;gap:.6rem;align-items:flex-start}
+.abcard:hover{border-color:var(--edge2);transform:translateY(-2px)}
+.abcard.on{border-color:var(--gold);background:linear-gradient(150deg,rgba(232,194,90,.16),rgba(10,7,3,.5));box-shadow:0 0 0 1px var(--gold)}
+.abcard.locked{opacity:.4;cursor:not-allowed;filter:grayscale(.6)}
+.abcard.t2{border-left:3px solid var(--violet)}
+.abemoji{font-size:1.5rem;flex-shrink:0;filter:drop-shadow(0 2px 4px rgba(0,0,0,.5))}
+.abinfo{flex:1;min-width:0}
+.abname{font-family:'Cinzel',serif;font-weight:600;font-size:.82rem;color:var(--gold-light);display:flex;justify-content:space-between;gap:.4rem}
+.abmp{font-size:.66rem;color:var(--azure);font-weight:400}
+.abdesc{font-size:.72rem;color:var(--parch-dim);line-height:1.4;margin-top:.2rem}
+.abtier{position:absolute;top:.4rem;right:.5rem;font-size:.55rem;color:var(--violet);font-family:'Cinzel',serif;letter-spacing:1px}
+.slotrow{display:flex;gap:.6rem;flex-wrap:wrap}
+.eqslot{flex:1;min-width:160px;border:1px solid var(--edge);border-radius:10px;padding:.6rem;background:rgba(0,0,0,.25)}
+.eqslot .slotlabel{font-family:'Cinzel',serif;font-size:.66rem;letter-spacing:1px;color:var(--parch-faint);text-transform:uppercase;margin-bottom:.4rem}
+.eqitems{display:flex;flex-wrap:wrap;gap:.3rem}
+.eqitem{font-size:1.1rem;padding:.25rem .4rem;border:1px solid var(--edge);border-radius:6px;cursor:pointer;transition:.2s;position:relative;background:rgba(0,0,0,.3)}
+.eqitem:hover{border-color:var(--edge2)}
+.eqitem.on{border-color:var(--gold);background:rgba(232,194,90,.15);box-shadow:0 0 0 1px var(--gold)}
+.eqitem .tip{position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:#1a1206;border:1px solid var(--gold-dark);padding:4px 8px;
+  font-size:.66rem;white-space:nowrap;color:var(--parch);opacity:0;pointer-events:none;transition:.2s;z-index:20;border-radius:4px}
+.eqitem:hover .tip{opacity:1}
+.eqempty{font-size:.7rem;color:var(--parch-faint);font-style:italic}
 
 /* combat */
-.combat-card{
-  background:rgba(139,26,26,0.12);border:1px solid rgba(139,26,26,0.35);
-  padding:1.2rem;margin-bottom:1rem;max-width:680px;
-}
-.enemy-name{font-family:'Cinzel',serif;font-size:1.1rem;color:#e05050;margin-bottom:.5rem}
-.enemy-sprite{font-size:3.5rem;display:block;text-align:center;margin-bottom:.8rem;animation:float 3s ease-in-out infinite}
-@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
-.big-bar-wrap{margin-bottom:.8rem}
-.big-bar-label{font-size:.75rem;color:#e07070;display:flex;justify-content:space-between;margin-bottom:4px}
-.big-bar{height:14px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden}
-.big-bar-fill{height:100%;background:linear-gradient(to right,#8b1a1a,#e03030);transition:width .5s}
-.your-turn-banner{
-  background:rgba(212,168,67,0.12);border:1px solid var(--gold);
-  padding:.5rem 1rem;font-family:'Cinzel',serif;font-size:.8rem;
-  color:var(--gold);text-align:center;margin-bottom:.8rem;
-  animation:pulseBadge 1.2s ease-in-out infinite;
-}
-.waiting-banner{
-  background:rgba(0,0,0,0.2);border:1px solid rgba(212,168,67,0.2);
-  padding:.5rem 1rem;font-size:.85rem;color:var(--parchment-dark);
-  text-align:center;margin-bottom:.8rem;
-}
-.combat-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+.ecard{position:relative;border:1px solid var(--blood);border-radius:14px;padding:1.3rem;margin-bottom:1.1rem;max-width:740px;overflow:hidden;
+  background:linear-gradient(160deg,rgba(90,16,16,.26),rgba(20,8,8,.5));box-shadow:inset 0 0 60px -20px rgba(224,56,56,.35)}
+.ehead{display:flex;align-items:center;gap:1rem;margin-bottom:.5rem}
+.esprite{font-size:3.2rem;filter:drop-shadow(0 0 20px rgba(224,56,56,.4));animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-8px)}}
+.ename{font-family:'Cinzel Decorative','Cinzel',serif;font-weight:700;font-size:1.25rem;color:#ff7a7a;text-shadow:0 0 18px rgba(224,56,56,.5)}
+.ephase{font-size:.64rem;color:var(--violet);font-family:'Cinzel',serif;letter-spacing:1px;margin-left:.5rem}
+.emech{font-size:.78rem;color:var(--parch-dim);font-style:italic;margin-top:.2rem}
+.ebar{height:16px;background:rgba(0,0,0,.5);border-radius:8px;overflow:hidden;box-shadow:inset 0 2px 6px rgba(0,0,0,.7);border:1px solid rgba(224,56,56,.2);margin-top:.5rem}
+.ebarf{height:100%;border-radius:8px;background:linear-gradient(90deg,#5a0e0e,var(--blood),var(--blood-br));transition:width .6s}
+.ebarlabel{font-size:.76rem;color:#ff9a9a;display:flex;justify-content:space-between;margin-top:.4rem;font-family:'Cinzel',serif}
+.statuses{display:flex;gap:.3rem;flex-wrap:wrap;margin-top:.5rem}
+.stchip{font-size:.62rem;padding:2px 6px;border-radius:4px;font-family:'Cinzel',serif;letter-spacing:.5px;border:1px solid currentColor}
+.st-poison{color:#7fd97f}.st-burn{color:#ff9a5a}.st-bleed{color:#ff6a6a}.st-stun,.st-freeze{color:#7fd0ff}.st-weaken{color:#c9a0ff}
+.st-vulnerable{color:#ffb0b0}.st-shield{color:#ffe9a8}.st-regen{color:#8fefc4}.st-evasion{color:#cfcfcf}.st-hawkeye{color:#ffd700}.st-markdmg{color:#ff8080}
 
-/* lobby */
-.lobby-roster{display:flex;flex-wrap:wrap;gap:.6rem;margin:1rem 0;max-width:680px}
-.roster-card{
-  border:1px solid rgba(212,168,67,0.2);padding:.7rem .9rem;
-  min-width:140px;background:rgba(0,0,0,0.3);
-}
-.rc-name{font-family:'Cinzel',serif;font-size:.8rem;color:var(--gold)}
-.rc-cls{font-size:.72rem;color:var(--parchment-dark);margin-bottom:.3rem}
-.rc-ready{font-size:.72rem;color:#2d8a2d}
-.rc-not-ready{font-size:.72rem;color:#e07070}
+.turnbanner{border:1px solid var(--gold);border-radius:10px;padding:.65rem 1.2rem;font-family:'Cinzel',serif;font-weight:600;font-size:.84rem;
+  letter-spacing:2px;color:var(--gold-light);text-align:center;margin-bottom:.9rem;text-transform:uppercase;
+  background:linear-gradient(180deg,rgba(232,194,90,.18),rgba(232,194,90,.04));box-shadow:0 0 24px -6px rgba(232,194,90,.6);animation:turnglow 1.4s infinite}
+@keyframes turnglow{0%,100%{box-shadow:0 0 24px -6px rgba(232,194,90,.5)}50%{box-shadow:0 0 38px -2px rgba(232,194,90,.85)}}
+.waitbanner{border:1px solid var(--edge);border-radius:10px;padding:.65rem 1.2rem;font-size:.88rem;color:var(--parch-faint);text-align:center;margin-bottom:.9rem;font-style:italic;background:rgba(0,0,0,.25)}
 
-/* victory */
-.victory-text{max-width:560px;text-align:center;font-size:1.05rem;line-height:1.9;font-style:italic;margin-bottom:1.5rem;color:var(--parchment-dark)}
-.victory-title{font-family:'Cinzel',serif;font-size:2.2rem;color:var(--gold);margin-bottom:1rem;text-align:center}
+.abilitybar{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.5rem;max-width:740px}
+.actbtn{position:relative;border:1px solid var(--edge2);border-radius:9px;padding:.6rem .7rem;cursor:pointer;transition:.2s;text-align:left;
+  background:linear-gradient(150deg,rgba(70,50,20,.5),rgba(20,14,6,.7));color:var(--parch);font-family:'Crimson Pro',serif;display:flex;gap:.5rem;align-items:center}
+.actbtn:hover:not(:disabled){border-color:var(--gold);transform:translateY(-2px);box-shadow:0 8px 20px -10px rgba(232,194,90,.5)}
+.actbtn:disabled{opacity:.4;cursor:not-allowed}
+.actbtn .ae{font-size:1.3rem;flex-shrink:0}
+.actbtn .an{font-family:'Cinzel',serif;font-weight:600;font-size:.76rem;color:var(--gold-light);line-height:1.1}
+.actbtn .amp{font-size:.64rem;color:var(--azure)}
+.actbtn.item-btn{background:linear-gradient(150deg,rgba(30,50,70,.5),rgba(10,16,24,.7))}
+.actbtn.pass-btn{background:linear-gradient(150deg,rgba(40,40,40,.5),rgba(14,14,14,.7))}
+.party-status{margin-top:1rem;max-width:740px}
+.ps-title{font-family:'Cinzel',serif;font-size:.66rem;letter-spacing:2px;color:var(--gold-dark);text-transform:uppercase;margin-bottom:.5rem}
+.ps-grid{display:flex;flex-wrap:wrap;gap:.5rem}
+.ps-chip{font-size:.76rem;color:var(--parch-dim);display:flex;align-items:center;gap:.3rem;border:1px solid var(--edge);border-radius:6px;padding:.25rem .5rem;background:rgba(0,0,0,.2)}
+.ps-chip img{width:18px;height:18px;border-radius:50%;border:1px solid var(--gold-dark)}
+.ps-chip.dead{color:var(--blood-br);opacity:.6}
 
-/* ── BOTTOM PANEL ── */
-.tab-row{
-  display:flex;border-bottom:1px solid rgba(212,168,67,0.12);flex-shrink:0;
-}
-.tab-btn{
-  padding:.4rem .9rem;background:transparent;border:none;
-  color:var(--parchment-dark);cursor:pointer;font-family:'Cinzel',serif;
-  font-size:.65rem;letter-spacing:1px;border-bottom:2px solid transparent;
-  transition:all .2s;text-transform:uppercase;
-}
-.tab-btn.active{color:var(--gold);border-bottom-color:var(--gold)}
-#log-panel,#chat-panel{display:none;flex:1;overflow-y:auto;padding:.6rem .8rem;font-size:.85rem;line-height:1.8}
-#log-panel.active,#chat-panel.active{display:block}
-.log-player{color:#7acc7a}.log-enemy{color:#e07070}.log-system{color:var(--gold-light)}
-.log-item{color:#88ccee}.log-heal{color:#88eeaa}
-.chat-entry{color:var(--parchment-dark)}.chat-name{color:var(--gold);font-family:'Cinzel',serif;font-size:.8rem}
-.chat-input-row{
-  display:flex;gap:.4rem;padding:.5rem .8rem;
-  border-top:1px solid rgba(212,168,67,0.1);flex-shrink:0;
-}
-.chat-input{
-  flex:1;background:rgba(0,0,0,0.4);border:1px solid rgba(212,168,67,0.2);
-  color:var(--parchment);padding:.4rem .7rem;font-family:'Crimson Pro',serif;
-  font-size:.85rem;outline:none;
-}
-.chat-input:focus{border-color:var(--gold-dark)}
-.chat-send{
-  background:transparent;border:1px solid rgba(212,168,67,0.3);
-  color:var(--gold);cursor:pointer;padding:.4rem .8rem;font-size:.75rem;
-  font-family:'Cinzel',serif;transition:all .2s;
-}
-.chat-send:hover{background:rgba(212,168,67,0.1)}
+/* loot */
+.lootgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:.7rem;max-width:640px;margin-bottom:1rem}
+.lootcard{border:1px solid var(--edge);border-radius:12px;padding:1.1rem;cursor:pointer;transition:.25s;text-align:center;
+  background:linear-gradient(160deg,rgba(40,28,12,.45),rgba(10,7,3,.6));animation:fade .4s}
+.lootcard:hover{border-color:var(--gold);transform:translateY(-4px);box-shadow:0 14px 36px -16px rgba(232,194,90,.5)}
+.lootcard .le{font-size:2.2rem;display:block;margin-bottom:.5rem;filter:drop-shadow(0 2px 8px rgba(0,0,0,.6))}
+.lootcard .ln{font-family:'Cinzel',serif;font-weight:600;font-size:.86rem;color:var(--gold-light)}
+.lootcard .ld{font-size:.72rem;color:var(--parch-dim);margin-top:.3rem;line-height:1.4}
+.waitloot{font-size:.85rem;color:var(--parch-faint);font-style:italic;margin-top:.5rem}
 
-/* floaters */
-.floater{
-  position:fixed;font-family:'Cinzel',serif;font-size:1.4rem;font-weight:700;
-  pointer-events:none;z-index:9999;animation:floatUp 1.2s ease-out forwards;
-}
-@keyframes floatUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-80px)}}
+/* victory/defeat */
+.vtitle{font-family:'Cinzel Decorative',serif;font-weight:900;font-size:2.3rem;margin-bottom:1rem;text-align:center;
+  background:linear-gradient(180deg,#fff3cf,var(--gold),var(--gold-dark));-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 40px rgba(232,194,90,.5))}
+.vtitle.bad{background:linear-gradient(180deg,#ff9a9a,var(--blood-br),var(--blood));-webkit-background-clip:text;background-clip:text;filter:drop-shadow(0 0 30px rgba(224,56,56,.5))}
+.vtext{max-width:580px;text-align:center;font-size:1.05rem;line-height:1.9;font-style:italic;margin-bottom:1.4rem;color:var(--parch-dim)}
 
-/* Scrollbars */
-::-webkit-scrollbar{width:4px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:rgba(212,168,67,0.2);border-radius:2px}
+/* bottom */
+.tabrow{display:flex;border-bottom:1px solid var(--edge);flex-shrink:0;background:linear-gradient(180deg,rgba(232,194,90,.04),transparent)}
+.tab{padding:.55rem 1.1rem;background:transparent;border:none;color:var(--parch-faint);cursor:pointer;font-family:'Cinzel',serif;font-weight:500;
+  font-size:.68rem;letter-spacing:2px;border-bottom:2px solid transparent;transition:.25s;text-transform:uppercase}
+.tab:hover{color:var(--parch)}
+.tab.on{color:var(--gold-light);border-bottom-color:var(--gold)}
+#log,#chat{display:none;flex:1;overflow-y:auto;padding:.6rem 1rem;font-size:.88rem;line-height:1.85}
+#log.on,#chat.on{display:block}
+#log>div,#chat>div{animation:logIn .3s;padding:1px 0}
+@keyframes logIn{from{opacity:0;transform:translateX(-6px)}to{opacity:1}}
+.l-player{color:#8fe09a}.l-enemy{color:#ff8585}.l-system{color:var(--gold-light)}.l-item{color:#86c9f0}.l-heal{color:#8fefc4}
+.c-entry{color:var(--parch-dim)}.c-name{color:var(--gold);font-family:'Cinzel',serif;font-weight:500;font-size:.84rem}
+.chatrow{display:flex;gap:.5rem;padding:.55rem 1rem;border-top:1px solid var(--edge);flex-shrink:0;background:rgba(0,0,0,.2)}
+.cinput{flex:1;background:rgba(0,0,0,.45);border:1px solid var(--edge);border-radius:8px;color:var(--parch);padding:.5rem .9rem;font-family:'Crimson Pro',serif;font-size:.88rem;outline:none}
+.cinput::placeholder{color:var(--parch-faint);font-style:italic}
+.cinput:focus{border-color:var(--gold-dark)}
+.csend{background:linear-gradient(180deg,rgba(70,50,20,.7),rgba(30,20,8,.85));border:1px solid var(--gold-dark);border-radius:8px;color:var(--gold-light);cursor:pointer;
+  padding:.5rem 1rem;font-size:.72rem;font-family:'Cinzel',serif;font-weight:600;letter-spacing:1.5px;transition:.25s}
+.csend:hover{border-color:var(--gold)}
 
-/* Responsive collapse */
-@media(max-width:640px){
-  #sidebar{width:180px}
-  .class-grid{flex-direction:column;align-items:center}
-}
-@media(max-width:480px){
-  #sidebar{display:none}
-  #bottom-panel{height:180px}
-}
+/* toast */
+#toast{position:fixed;top:20px;left:50%;transform:translateX(-50%);z-index:9999;display:flex;flex-direction:column;gap:.5rem;align-items:center}
+.toast{background:linear-gradient(180deg,rgba(40,12,12,.95),rgba(20,6,6,.97));border:1px solid var(--blood);border-radius:8px;
+  padding:.6rem 1.2rem;color:#ff9a9a;font-family:'Cinzel',serif;font-size:.8rem;letter-spacing:1px;animation:toastIn .3s;box-shadow:0 8px 24px -8px rgba(0,0,0,.8)}
+@keyframes toastIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1}}
+.floater{position:fixed;font-family:'Cinzel Decorative',serif;font-size:1.5rem;font-weight:900;pointer-events:none;z-index:9998;
+  text-shadow:0 0 16px currentColor,0 2px 4px rgba(0,0,0,.8);animation:floatUp 1.3s cubic-bezier(.2,.6,.3,1) forwards}
+@keyframes floatUp{0%{opacity:0;transform:translateY(0) scale(.6)}15%{opacity:1;transform:translateY(-10px) scale(1.1)}100%{opacity:0;transform:translateY(-90px)}}
+
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:rgba(0,0,0,.2)}
+::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--gold-dark),var(--gold-deep));border-radius:3px}
+#jstatus{margin-top:1.2rem;font-size:.82rem;color:var(--parch-faint);font-family:'Cinzel',serif;letter-spacing:1px}
+
+@media(max-width:680px){#sidebar{width:200px}}
+@media(max-width:520px){#sidebar{display:none}#bottom{height:180px}#scene{padding:1.1rem}}
 </style>
 </head>
 <body>
 
-<!-- ════════════════════════════════════════════
-     SCREENS
-════════════════════════════════════════════ -->
-
-<!-- JOIN SCREEN -->
-<div class="screen active" id="join-screen">
-  <p class="title-badge">✦ 8-Player Co-op ✦</p>
-  <h1 class="game-title">THE ETERNAL QUEST</h1>
-  <p class="game-sub">Your Face · Your Legend · Your Destiny</p>
-  <div class="divider"></div>
-
-  <!-- Portrait upload -->
-  <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
-    <span style="font-size:2rem;display:block;margin-bottom:.5rem">⚔️</span>
-    <p><strong>Upload your portrait</strong></p>
-    <p style="font-size:.8rem;margin-top:.3rem">Your face becomes your hero</p>
-  </div>
-  <input type="file" id="file-input" accept="image/*">
-  <div class="portrait-wrap" id="portrait-wrap"><img id="portrait-preview" src="" alt=""></div>
-
-  <!-- Class selection -->
-  <div id="class-step" style="display:none;width:100%;max-width:520px;text-align:center">
-    <label class="field-label" style="text-align:center;display:block;margin-bottom:.8rem">Choose Your Class</label>
-    <div class="class-grid">
-      <div class="class-card" data-cls="warrior" onclick="selectCls(this)">
-        <span class="ci">⚔️</span><span class="cn">Warrior</span><span class="cd">Tank & striker</span>
-      </div>
-      <div class="class-card" data-cls="mage" onclick="selectCls(this)">
-        <span class="ci">🔮</span><span class="cn">Mage</span><span class="cd">High damage spells</span>
-      </div>
-      <div class="class-card" data-cls="rogue" onclick="selectCls(this)">
-        <span class="ci">🗡️</span><span class="cn">Rogue</span><span class="cd">Fast & critical</span>
-      </div>
-      <div class="class-card" data-cls="ranger" onclick="selectCls(this)">
-        <span class="ci">🏹</span><span class="cn">Ranger</span><span class="cd">Balance & nature</span>
-      </div>
-    </div>
-
-    <div style="margin-bottom:1.2rem">
-      <label class="field-label">Your Name, Hero</label>
-      <input type="text" id="hero-name" class="text-input" placeholder="Enter name..." maxlength="22">
-    </div>
-    <button class="btn" id="join-btn" onclick="joinGame()" disabled>Enter the Realm</button>
-  </div>
-
-  <p id="join-status" style="margin-top:1rem;font-size:.8rem;color:var(--parchment-dark)">Connecting to realm...</p>
+<div class="atmos" aria-hidden="true">
+  <div class="stars"></div><div class="glow"></div><div class="mist"></div><div id="embers"></div>
 </div>
 
-<!-- LOBBY FULL SCREEN -->
-<div class="screen" id="lobby-full-screen">
-  <p class="title-badge">✦ Realm at Capacity ✦</p>
-  <h2 style="font-family:'Cinzel',serif;font-size:1.8rem;color:var(--gold);margin-bottom:1rem">The Realm is Full</h2>
+<div id="toast"></div>
+
+<!-- JOIN -->
+<div class="screen on" id="join">
+  <p class="tbadge">8-Player Co-op</p>
+  <h1 class="gtitle">The Eternal Quest</h1>
+  <p class="gsub">Your Face · Your Legend · Your Destiny</p>
+  <div class="divider"></div>
+  <div class="upload" id="upload" onclick="document.getElementById('fileinput').click()">
+    <span class="rune">⚔️</span><p><strong>Upload your portrait</strong></p><p>Your face becomes your hero</p>
+  </div>
+  <input type="file" id="fileinput" accept="image/*">
+  <div class="pwrap" id="pwrap"><img id="ppreview" src="" alt=""></div>
+  <div id="cstep" style="display:none;width:100%;max-width:620px;text-align:center">
+    <label class="flabel" style="text-align:center;margin-bottom:1rem">Choose Your Class</label>
+    <div class="cgrid" id="cgrid"></div>
+    <div style="margin-bottom:1.3rem">
+      <label class="flabel">Your Name, Hero</label>
+      <input type="text" id="hname" class="tinput" placeholder="Enter name..." maxlength="22">
+    </div>
+    <button class="btn btn-big" id="joinbtn" onclick="joinGame()" disabled>Enter the Realm</button>
+  </div>
+  <p id="jstatus">Connecting to realm...</p>
+</div>
+
+<!-- FULL -->
+<div class="screen" id="full">
+  <p class="tbadge">Realm at Capacity</p>
+  <h2>The Realm is Full</h2>
   <p>All 8 hero slots are occupied.<br>Wait for a hero to leave, then refresh.</p>
   <div class="divider"></div>
-  <div class="slot-grid" id="lobby-slots"></div>
-  <button class="btn btn-sm" style="margin-top:1.5rem" onclick="location.reload()">Check Again</button>
+  <button class="btn btn-sm" onclick="location.reload()">Check Again</button>
 </div>
 
-<!-- ════════════════════════════════════════════
-     MAIN GAME UI (hidden until joined)
-════════════════════════════════════════════ -->
+<!-- GAME -->
 <div id="app" style="display:none">
-
-  <!-- SIDEBAR: Party -->
   <div id="sidebar">
-    <div id="sidebar-header">Party — <span id="party-count">0</span>/8</div>
-    <div id="party-list"></div>
-    <div id="sidebar-footer">
-      <div id="shard-display">⬜⬜⬜⬜⬜</div>
-      <div id="player-count-badge">0/8 heroes</div>
-      <div id="self-stats"></div>
+    <div id="sbhead">Party — <span id="pcnum">0</span>/8</div>
+    <div id="party"></div>
+    <div id="sbfoot">
+      <div id="shards">⬜ ⬜</div>
+      <div id="pcount">0/8 heroes</div>
+      <div id="selfstats"></div>
     </div>
   </div>
-
-  <!-- MAIN -->
   <div id="main">
-    <div id="scene-panel"></div>
-    <div id="bottom-panel">
-      <div class="tab-row">
-        <button class="tab-btn active" onclick="showTab('log')">Battle Log</button>
-        <button class="tab-btn" onclick="showTab('chat')">Party Chat</button>
+    <div id="scene"></div>
+    <div id="bottom">
+      <div class="tabrow">
+        <button class="tab on" onclick="showTab('log')">Battle Log</button>
+        <button class="tab" onclick="showTab('chat')">Party Chat</button>
       </div>
-      <div id="log-panel" class="active"></div>
-      <div id="chat-panel"></div>
-      <div class="chat-input-row">
-        <input type="text" class="chat-input" id="chat-input" placeholder="Say something to the party..." maxlength="200">
-        <button class="chat-send" onclick="sendChat()">Send</button>
+      <div id="log" class="on"></div>
+      <div id="chat"></div>
+      <div class="chatrow">
+        <input type="text" class="cinput" id="cinput" placeholder="Say something to the party..." maxlength="200">
+        <button class="csend" onclick="sendChat()">Send</button>
       </div>
     </div>
   </div>
 </div>
 
 <script>
-// ═══════════════════════════════════════════════
-// STATE
-// ═══════════════════════════════════════════════
-let ws = null;
-let sessionId = null;
-let myPortraitDataUrl = '';
-let selectedCls = '';
-let lastWorld = null;
-let myVote = null;
-let pingInterval = null;
+// ════ CONTENT MIRROR (client-side display only) ════
+const CLASSES = {
+  warrior:{emoji:'⚔️',name:'Warrior',desc:'Tank & frontline. Soaks hits, counters.'},
+  mage:{emoji:'🔮',name:'Mage',desc:'Glass cannon. Huge spells, fragile.'},
+  rogue:{emoji:'🗡️',name:'Rogue',desc:'Fast striker. Crits, poison, evasion.'},
+  ranger:{emoji:'🏹',name:'Ranger',desc:'Balanced. Heals & control.'},
+};
+const ABILITIES = {
+  cleave:{name:'Cleave',emoji:'🪓',cls:'warrior',tier:1,mpCost:6,desc:'Heavy strike. 1.4× ATK.'},
+  shieldwall:{name:'Shield Wall',emoji:'🛡️',cls:'warrior',tier:1,mpCost:8,desc:'Shield absorbing 40 dmg.'},
+  taunt:{name:'Taunt',emoji:'😤',cls:'warrior',tier:1,mpCost:5,desc:'Force enemy to you + 30 shield.'},
+  bash:{name:'Bash',emoji:'💥',cls:'warrior',tier:1,mpCost:10,desc:'Damage + 50% stun.'},
+  earthshatter:{name:'Earthshatter',emoji:'🌋',cls:'warrior',tier:2,mpCost:18,desc:'2.2× ATK + Vulnerable.'},
+  bloodlust:{name:'Bloodlust',emoji:'🩸',cls:'warrior',tier:2,mpCost:14,desc:'Damage + heal 60% dealt.'},
+  unbreakable:{name:'Unbreakable',emoji:'⛰️',cls:'warrior',tier:2,mpCost:20,desc:'80 shield + Regen 3 rounds.'},
+  firebolt:{name:'Firebolt',emoji:'🔥',cls:'mage',tier:1,mpCost:10,desc:'1.6× ATK + Burn.'},
+  frostshard:{name:'Frost Shard',emoji:'❄️',cls:'mage',tier:1,mpCost:12,desc:'Damage + Freeze.'},
+  arcaneorb:{name:'Arcane Orb',emoji:'🔮',cls:'mage',tier:1,mpCost:14,desc:'1.8× ATK, ignores DEF.'},
+  manashield:{name:'Mana Shield',emoji:'🌀',cls:'mage',tier:1,mpCost:8,desc:'Shield = 50% current MP.'},
+  meteor:{name:'Meteor',emoji:'☄️',cls:'mage',tier:2,mpCost:28,desc:'3× ATK + huge Burn.'},
+  timewarp:{name:'Time Warp',emoji:'⏳',cls:'mage',tier:2,mpCost:22,desc:'Stun 2 rounds + act again.'},
+  soulburn:{name:'Soul Burn',emoji:'💜',cls:'mage',tier:2,mpCost:24,desc:'Scales w/ enemy missing HP.'},
+  backstab:{name:'Backstab',emoji:'🗡️',cls:'rogue',tier:1,mpCost:8,desc:'1.5× ATK, 40% crit.'},
+  poisonblade:{name:'Poison Blade',emoji:'🐍',cls:'rogue',tier:1,mpCost:10,desc:'Damage + stacking Poison.'},
+  smokebomb:{name:'Smoke Bomb',emoji:'💨',cls:'rogue',tier:1,mpCost:9,desc:'Dodge next 2 attacks.'},
+  shadowstep:{name:'Shadow Step',emoji:'🌑',cls:'rogue',tier:1,mpCost:7,desc:'Damage + clear debuffs.'},
+  thousandcuts:{name:'Thousand Cuts',emoji:'🌪️',cls:'rogue',tier:2,mpCost:20,desc:'5 hits, each can crit.'},
+  venomnova:{name:'Venom Nova',emoji:'☠️',cls:'rogue',tier:2,mpCost:18,desc:'Heavy Poison + damage.'},
+  deathmark:{name:'Death Mark',emoji:'🎯',cls:'rogue',tier:2,mpCost:24,desc:'Enemy +60% dmg taken.'},
+  pierceshot:{name:'Pierce Shot',emoji:'🏹',cls:'ranger',tier:1,mpCost:8,desc:'1.5× ATK, half-pierce DEF.'},
+  healingwind:{name:'Healing Wind',emoji:'🌿',cls:'ranger',tier:1,mpCost:12,desc:'Heal ally 35 + Regen.'},
+  entangle:{name:'Entangle',emoji:'🌱',cls:'ranger',tier:1,mpCost:10,desc:'Damage + Weaken enemy.'},
+  hawkeye:{name:'Hawk Eye',emoji:'🦅',cls:'ranger',tier:1,mpCost:6,desc:'Next 2 attacks crit.'},
+  arrowstorm:{name:'Arrow Storm',emoji:'🌧️',cls:'ranger',tier:2,mpCost:22,desc:'2.5× ATK + Bleed.'},
+  lifebloom:{name:'Lifebloom',emoji:'🌸',cls:'ranger',tier:2,mpCost:20,desc:'Heal ALL allies + Regen.'},
+  naturewrath:{name:"Nature's Wrath",emoji:'🌳',cls:'ranger',tier:2,mpCost:26,desc:'Dmg+Poison+Weaken+Vuln.'},
+  warcry:{name:'War Cry',emoji:'📯',cls:'warrior',tier:3,mpCost:16,desc:'Party Regen + 30 shield each.'},
+  executioner:{name:'Executioner',emoji:'🪦',cls:'warrior',tier:3,mpCost:22,desc:'3× ATK; ×2 vs low-HP enemy.'},
+  ragnarok:{name:'Ragnarok',emoji:'☄️',cls:'warrior',tier:4,mpCost:30,desc:'4× ATK + Vuln + heal 40%.'},
+  chainlightning:{name:'Chain Lightning',emoji:'⚡',cls:'mage',tier:3,mpCost:20,desc:'2× ATK + Stun, ignore DEF.'},
+  blizzard:{name:'Blizzard',emoji:'🌨️',cls:'mage',tier:3,mpCost:26,desc:'Damage + Freeze + Vuln.'},
+  apocalypse:{name:'Apocalypse',emoji:'🌌',cls:'mage',tier:4,mpCost:34,desc:'4.5× ATK ignore DEF + Burn.'},
+  assassinate:{name:'Assassinate',emoji:'🔪',cls:'rogue',tier:3,mpCost:22,desc:'2.5× ATK, 70% crit, ignore DEF.'},
+  noxiouscloud:{name:'Noxious Cloud',emoji:'🟢',cls:'rogue',tier:3,mpCost:20,desc:'Big Poison + Weaken + Vuln.'},
+  oblivion:{name:'Oblivion',emoji:'♠️',cls:'rogue',tier:4,mpCost:30,desc:'7 hits + Death Mark.'},
+  stormvolley:{name:'Storm Volley',emoji:'⛈️',cls:'ranger',tier:3,mpCost:24,desc:'3× ATK + Stun chance.'},
+  sanctuary:{name:'Sanctuary',emoji:'🕊️',cls:'ranger',tier:3,mpCost:22,desc:'Heal all 60 + 40 shield.'},
+  worldtree:{name:'World-Tree Blessing',emoji:'🌲',cls:'ranger',tier:4,mpCost:32,desc:'Full heal + Regen + 60 shield.'},
+};
+const ITEMS = {
+  hpotion:{name:'Health Potion',emoji:'🧪',desc:'Restore 60 HP',kind:'consumable'},
+  mpotion:{name:'Mana Potion',emoji:'💧',desc:'Restore 50 MP',kind:'consumable'},
+  greaterhp:{name:'Greater Heal',emoji:'❤️‍🔥',desc:'Restore 130 HP',kind:'consumable'},
+  elixir:{name:'Elixir',emoji:'🌈',desc:'Full HP + MP',kind:'consumable'},
+  antidote:{name:'Antidote',emoji:'🍵',desc:'Clear debuffs +20 HP',kind:'consumable'},
+  bomb:{name:'Fire Bomb',emoji:'💣',desc:'70 fixed damage',kind:'consumable'},
+  megabomb:{name:'Inferno Bomb',emoji:'🧨',desc:'150 fixed damage',kind:'consumable'},
+  ironsword:{name:'Iron Sword',emoji:'🗡️',desc:'+8 ATK',kind:'weapon'},
+  flameblade:{name:'Flameblade',emoji:'🔥',desc:'+14 ATK, Burn on hit',kind:'weapon'},
+  venomfang:{name:'Venom Fang',emoji:'🐍',desc:'+10 ATK, Poison on hit',kind:'weapon'},
+  staff:{name:'Arcane Staff',emoji:'🪄',desc:'+6 ATK, +30 MP',kind:'weapon'},
+  excalibur:{name:'Excalibur',emoji:'⚜️',desc:'+24 ATK, +10 DEF',kind:'weapon'},
+  oakshield:{name:'Oak Shield',emoji:'🛡️',desc:'+10 DEF',kind:'armor'},
+  platemail:{name:'Plate Mail',emoji:'🏰',desc:'+18 DEF, +30 HP',kind:'armor'},
+  robe:{name:'Mystic Robe',emoji:'👘',desc:'+6 DEF, +40 MP',kind:'armor'},
+  cloak:{name:'Shadow Cloak',emoji:'🧥',desc:'+8 DEF +6 SPD, 15% dodge',kind:'armor'},
+  dragonscale:{name:'Dragonscale',emoji:'🐲',desc:'+28 DEF, +60 HP',kind:'armor'},
+  amulet:{name:'Amulet of Vigor',emoji:'📿',desc:'+50 Max HP',kind:'trinket'},
+  ring:{name:'Ring of Power',emoji:'💍',desc:'+6 ATK +6 DEF',kind:'trinket'},
+  orb:{name:'Soul Orb',emoji:'🔆',desc:'Regen 8 HP/round',kind:'trinket'},
+  boots:{name:'Swift Boots',emoji:'👢',desc:'+10 SPD, +10% crit',kind:'trinket'},
+  phoenix:{name:'Phoenix Feather',emoji:'🪶',desc:'+30 HP, Regen 14/round',kind:'trinket'},
+};
+const STATUS_LABEL = {poison:'🐍 Poison',burn:'🔥 Burn',bleed:'🩸 Bleed',stun:'💫 Stun',freeze:'🧊 Freeze',
+  weaken:'⬇️ Weak',vulnerable:'🎯 Vuln',shield:'🛡️ Shield',regen:'💚 Regen',evasion:'💨 Evade',hawkeye:'🦅 Aim',markdmg:'🎯 Marked'};
 
-// ═══════════════════════════════════════════════
-// WS CONNECTION
-// ═══════════════════════════════════════════════
-function connect() {
-  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${proto}//${location.host}`);
+// ════ STATE ════
+let ws=null, sessionId=null, myPortrait='', selCls='', last=null;
+// local equip-editing buffers
+let editAb=null, editEq=null;
 
-  ws.onopen = () => {
-    document.getElementById('join-status').textContent = 'Connected! Upload your portrait to begin.';
-    pingInterval = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
-    }, 25000);
-  };
+function connect(){
+  const proto=location.protocol==='https:'?'wss:':'ws:';
+  ws=new WebSocket(proto+'//'+location.host);
+  ws.onopen=()=>{ document.getElementById('jstatus').textContent='Connected! Upload your portrait to begin.';
+    setInterval(()=>{ if(ws.readyState===1) ws.send(JSON.stringify({type:'ping'})); },25000); };
+  ws.onclose=()=>{ document.getElementById('jstatus').textContent='Disconnected. Reconnecting...'; setTimeout(connect,2000); };
+  ws.onerror=()=>{};
+  ws.onmessage=e=>{ let m; try{m=JSON.parse(e.data);}catch{return;} handle(m); };
+}
+function send(d){ if(ws&&ws.readyState===1) ws.send(JSON.stringify(d)); }
 
-  ws.onclose = () => {
-    clearInterval(pingInterval);
-    document.getElementById('join-status').textContent = 'Disconnected. Reconnecting...';
-    setTimeout(connect, 2000);
-  };
-
-  ws.onerror = () => {};
-
-  ws.onmessage = e => {
-    let msg;
-    try { msg = JSON.parse(e.data); } catch { return; }
-    handleMsg(msg);
-  };
+function handle(m){
+  if(m.type==='init'){ sessionId=m.sessionId; return; }
+  if(m.type==='full'){ document.getElementById('join').classList.remove('on'); document.getElementById('full').classList.add('on'); return; }
+  if(m.type==='toast'){ toast(m.msg); return; }
+  if(m.type==='pong') return;
+  if(m.type==='state'){ last=m; render(m); }
 }
 
-function send(data) {
-  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+function toast(msg){
+  const t=document.createElement('div'); t.className='toast'; t.textContent=msg;
+  document.getElementById('toast').appendChild(t); setTimeout(()=>t.remove(),2200);
 }
 
-// ═══════════════════════════════════════════════
-// MESSAGE HANDLER
-// ═══════════════════════════════════════════════
-function handleMsg(msg) {
-  if (msg.type === 'session_init') {
-    sessionId = msg.sessionId;
-    document.getElementById('join-status').textContent = `Connected (${msg.playerCount}/${msg.maxPlayers} heroes present). Upload portrait to begin!`;
-    return;
-  }
-  if (msg.type === 'lobby_full') {
-    showLobbyFull(msg);
-    return;
-  }
-  if (msg.type === 'error') {
-    showFloater(msg.msg, '#e07070');
-    return;
-  }
-  if (msg.type === 'pong') return;
-
-  if (msg.type === 'world_state') {
-    lastWorld = msg;
-    render(msg);
-  }
+// ════ JOIN ════
+function buildClassCards(){
+  const g=document.getElementById('cgrid');
+  g.innerHTML=Object.entries(CLASSES).map(([id,c])=>
+    `<div class="ccard" data-cls="${id}" onclick="selectCls(this)"><span class="ci">${c.emoji}</span><span class="cn">${c.name}</span><span class="cd">${c.desc}</span></div>`).join('');
 }
-
-// ═══════════════════════════════════════════════
-// JOIN
-// ═══════════════════════════════════════════════
-function selectCls(el) {
-  document.querySelectorAll('.class-card').forEach(c => c.classList.remove('sel'));
-  el.classList.add('sel');
-  selectedCls = el.dataset.cls;
-  checkJoinReady();
-}
-
-function checkJoinReady() {
-  document.getElementById('join-btn').disabled =
-    !(selectedCls && document.getElementById('hero-name').value.trim() && myPortraitDataUrl);
-}
-
-document.getElementById('hero-name').addEventListener('input', checkJoinReady);
-
-document.getElementById('file-input').addEventListener('change', function () {
-  const file = this.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = e => {
-    // Compress portrait to reasonable size
-    const img = new Image();
-    img.onload = () => {
-      const canvas = document.createElement('canvas');
-      const size = 200;
-      canvas.width = size; canvas.height = size;
-      const ctx = canvas.getContext('2d');
-      const min = Math.min(img.width, img.height);
-      const sx = (img.width - min) / 2;
-      const sy = (img.height - min) / 2;
-      ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
-      myPortraitDataUrl = canvas.toDataURL('image/jpeg', 0.7);
-
-      document.getElementById('portrait-preview').src = myPortraitDataUrl;
-      document.getElementById('portrait-wrap').style.display = 'block';
-      document.getElementById('upload-zone').style.display = 'none';
-      document.getElementById('class-step').style.display = 'block';
-      checkJoinReady();
-    };
-    img.src = e.target.result;
-  };
-  reader.readAsDataURL(file);
+function selectCls(el){ document.querySelectorAll('.ccard').forEach(c=>c.classList.remove('sel')); el.classList.add('sel'); selCls=el.dataset.cls; checkJoin(); }
+function checkJoin(){ document.getElementById('joinbtn').disabled=!(selCls&&document.getElementById('hname').value.trim()&&myPortrait); }
+document.getElementById('hname').addEventListener('input',checkJoin);
+document.getElementById('fileinput').addEventListener('change',function(){
+  const f=this.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=e=>{ const img=new Image(); img.onload=()=>{
+    const cv=document.createElement('canvas'); const sz=200; cv.width=sz; cv.height=sz;
+    const ctx=cv.getContext('2d'); const mn=Math.min(img.width,img.height);
+    ctx.drawImage(img,(img.width-mn)/2,(img.height-mn)/2,mn,mn,0,0,sz,sz);
+    myPortrait=cv.toDataURL('image/jpeg',0.7);
+    document.getElementById('ppreview').src=myPortrait;
+    document.getElementById('pwrap').style.display='block';
+    document.getElementById('upload').style.display='none';
+    document.getElementById('cstep').style.display='block';
+    checkJoin();
+  }; img.src=e.target.result; };
+  rd.readAsDataURL(f);
 });
-
-function joinGame() {
-  const name = document.getElementById('hero-name').value.trim();
-  if (!name || !selectedCls || !myPortraitDataUrl) return;
-  send({ type: 'join', name, cls: selectedCls, portrait: myPortraitDataUrl });
-  document.getElementById('join-screen').classList.remove('active');
-  document.getElementById('app').style.display = 'flex';
+function joinGame(){
+  const name=document.getElementById('hname').value.trim();
+  if(!name||!selCls||!myPortrait) return;
+  send({type:'join',name,cls:selCls,portrait:myPortrait});
+  document.getElementById('join').classList.remove('on');
+  document.getElementById('app').style.display='flex';
 }
 
-function showLobbyFull(msg) {
-  document.getElementById('join-screen').classList.remove('active');
-  document.getElementById('lobby-full-screen').classList.add('active');
+// ════ RENDER ════
+function me(){ return last? last.players.find(p=>p.id===sessionId): null; }
+function render(s){ renderSidebar(s); renderScene(s); renderLog(s); renderChat(s); }
+
+function statusChips(arr){
+  if(!arr||!arr.length) return '';
+  return '<div class="statuses">'+arr.map(st=>{
+    const lbl=STATUS_LABEL[st.type]||st.type;
+    const r=st.rounds===99?'':' '+st.rounds;
+    const p=(st.type==='shield'&&st.power)?' '+st.power:'';
+    return `<span class="stchip st-${st.type}">${lbl}${p}${r}</span>`;
+  }).join('')+'</div>';
 }
 
-// ═══════════════════════════════════════════════
-// RENDER
-// ═══════════════════════════════════════════════
-function render(state) {
-  renderSidebar(state);
-  renderScene(state);
-  renderLog(state);
-  renderChat(state);
-}
-
-function renderSidebar(state) {
-  const { world, players, playerCount, maxPlayers } = state;
-  document.getElementById('party-count').textContent = playerCount;
-  document.getElementById('player-count-badge').textContent = `${playerCount}/${maxPlayers} heroes`;
-
-  // Shards
-  const filled = '💎'; const empty = '⬜';
-  document.getElementById('shard-display').textContent =
-    filled.repeat(world.shards) + empty.repeat(5 - world.shards);
-
-  // Self stats
-  const me = players.find(p => p.id === sessionId);
-  if (me) {
-    document.getElementById('self-stats').innerHTML = `
-      <div class="stat-row"><span>Level</span><span class="stat-val">${me.level}</span></div>
-      <div class="stat-row"><span>HP</span><span class="stat-val">${me.hp}/${me.maxHp}</span></div>
-      <div class="stat-row"><span>MP</span><span class="stat-val">${me.mp}/${me.maxMp}</span></div>
-    `;
-  }
-
-  // Party list
-  const currentTurnId = world.combat
-    ? (() => {
-        // Determine whose turn: server sends currentTurn index into queue
-        return null; // We'll highlight via combat state separately
-      })() : null;
-
-  const list = document.getElementById('party-list');
-  list.innerHTML = players.map(p => {
-    const isMe = p.id === sessionId;
-    const isTurn = world.combat?.currentTurn === players.indexOf(p); // rough
-    const hpPct = Math.round(p.hp / p.maxHp * 100);
-    const mpPct = Math.round(p.mp / p.maxMp * 100);
-    const portraitEl = p.portrait
-      ? `<div class="pm-portrait"><img src="${p.portrait}" alt=""></div>`
-      : `<div class="pm-portrait">${p.emoji}</div>`;
-
-    return `<div class="party-member ${p.alive ? '' : 'pm-dead'} ${isMe ? 'pm-you' : ''}">
-      ${portraitEl}
-      <div class="pm-info">
-        <div class="pm-name">${p.name}</div>
-        <div class="pm-cls">${p.emoji} ${p.cls} · Lv${p.level}</div>
-        <div class="pm-bars">
-          <div class="pm-bar"><div class="pm-bar-fill hp-bar" style="width:${hpPct}%"></div></div>
-          <div class="pm-bar"><div class="pm-bar-fill mp-bar" style="width:${mpPct}%"></div></div>
-        </div>
-      </div>
-    </div>`;
+function renderSidebar(s){
+  const {world,players,playerCount,maxPlayers}=s;
+  document.getElementById('pcnum').textContent=playerCount;
+  document.getElementById('pcount').textContent=playerCount+'/'+maxPlayers+' heroes';
+  // shards = stages cleared
+  const total=world.totalStages||10;
+  let cleared=world.stageIdx;
+  if(world.phase==='victory') cleared=total;
+  document.getElementById('shards').textContent='💎 '+cleared+' / '+total+' Shards';
+  const m=me();
+  if(m){ document.getElementById('selfstats').innerHTML=
+    `<div class="srow"><span>Class</span><span class="sval">${m.emoji} ${m.className}</span></div>
+     <div class="srow"><span>Level</span><span class="sval">${m.level}</span></div>
+     <div class="srow"><span>ATK / DEF</span><span class="sval">${m.atk} / ${m.def}</span></div>
+     <div class="srow"><span>Speed</span><span class="sval">${m.spd}</span></div>
+     <div class="srow"><span>Gold</span><span class="sval">${m.gold}</span></div>`; }
+  const turnId=world.currentTurnId;
+  document.getElementById('party').innerHTML=players.map(p=>{
+    const isMe=p.id===sessionId, isTurn=p.id===turnId;
+    const pic=p.portrait?`<div class="pmpic"><img src="${p.portrait}"></div>`:`<div class="pmpic">${p.emoji}</div>`;
+    return `<div class="pm ${p.alive?'':'dead'} ${isTurn?'turn':''}">
+      ${pic}<div class="pminfo"><div class="pmname">${esc(p.name)}</div>
+      <div class="pmcls">${p.emoji} ${esc(p.className)} · L${p.level}</div>
+      <div class="pmbars"><div class="bar"><div class="barf hpf" style="width:${Math.round(p.hp/p.maxHp*100)}%"></div></div>
+      <div class="bar"><div class="barf mpf" style="width:${Math.round(p.mp/Math.max(1,p.maxMp)*100)}%"></div></div></div>
+      ${p.status&&p.status.length?statusChips(p.status):''}</div>
+      ${isMe?'<span class="you-tag">YOU</span>':''}</div>`;
   }).join('');
 }
 
-function renderScene(state) {
-  const { world, players } = state;
-  const panel = document.getElementById('scene-panel');
-  const me = players.find(p => p.id === sessionId);
-  const phase = world.phase;
-
-  const phaseLabel = {
-    lobby: 'Lobby', adventure: 'Adventure', combat: 'Combat!', victory: 'Victory!'
-  }[phase] || phase;
-
-  let html = `<div class="loc-header">
-    <span class="loc-emoji">${phaseEmoji(phase, world)}</span>
-    <span class="loc-name">${phaseTitle(phase, world)}</span>
-    <span class="phase-badge phase-${phase}">${phaseLabel}</span>
-  </div>`;
-
-  if (phase === 'lobby') html += renderLobby(players, me);
-  else if (phase === 'adventure') html += renderAdventure(world, me);
-  else if (phase === 'combat') html += renderCombat(world, me, players);
-  else if (phase === 'victory') html += renderVictory(players);
-
-  panel.innerHTML = html;
+function renderScene(s){
+  const {world,players}=s; const m=me();
+  const phaseLabel={lobby:'Lobby',equip:'Equip',combat:'Combat!',loot:'Loot',victory:'Victory!',defeat:'Defeat'}[world.phase]||world.phase;
+  let emoji='🏰',title='Millhaven — Gathering Hall';
+  if(world.phase==='equip'){emoji=world.stageEmoji;title='Prepare — '+world.stageName;}
+  else if(world.phase==='combat'||world.phase==='loot'){emoji=world.stageEmoji;title=world.stageName;}
+  else if(world.phase==='victory'){emoji='🌟';title='The Realm is Saved!';}
+  else if(world.phase==='defeat'){emoji='💀';title='The Rift Prevails';}
+  let html=`<div class="lochead"><span class="locemoji">${emoji}</span><span class="locname">${title}</span><span class="pbadge p-${world.phase}">${phaseLabel}</span></div>`;
+  if(world.phase==='lobby') html+=renderLobby(players,m);
+  else if(world.phase==='equip') html+=renderEquip(world,m);
+  else if(world.phase==='combat') html+=renderCombat(world,m,players);
+  else if(world.phase==='loot') html+=renderLoot(world,m);
+  else if(world.phase==='victory') html+=renderEnd(players,true);
+  else if(world.phase==='defeat') html+=renderEnd(players,false);
+  document.getElementById('scene').innerHTML=html;
 }
 
-function phaseEmoji(phase, world) {
-  if (phase === 'lobby') return '🏰';
-  if (phase === 'victory') return '🌟';
-  if (phase === 'combat' && world.currentZone) return zoneEmoji(world.currentZone);
-  return '🗺️';
-}
-
-function phaseTitle(phase, world) {
-  if (phase === 'lobby') return 'Millhaven — Gathering Hall';
-  if (phase === 'victory') return 'The Realm is Saved!';
-  if (phase === 'combat' && world.currentZone) return zoneName(world.currentZone);
-  return 'Millhaven — War Council';
-}
-
-const ZONE_DATA = {
-  dark_forest:    { name: 'Dark Forest',    emoji: '🌲', desc: 'A Troll guards the First Shard deep among cursed oaks.' },
-  sunken_crypt:   { name: 'Sunken Crypt',   emoji: '💀', desc: 'A Skeleton Mage commands the undead over the Second Shard.' },
-  dragons_peak:   { name: "Dragon's Peak",  emoji: '🐉', desc: 'Ancient Varathos hoards the Third Shard atop the volcano.' },
-  abyssal_shore:  { name: 'Abyssal Shore',  emoji: '🌊', desc: 'The Sea Leviathan coils around the Fourth Shard in black waters.' },
-  shadow_sanctum: { name: 'Shadow Sanctum', emoji: '🏰', desc: 'The Rift Lord itself guards the Fifth and final Shard.' },
-};
-function zoneName(z) { return ZONE_DATA[z]?.name || z; }
-function zoneEmoji(z) { return ZONE_DATA[z]?.emoji || '🗺️'; }
-
-function renderLobby(players, me) {
-  const readyCount = players.filter(p => p.ready).length;
-  const allReady = readyCount === players.length && players.length > 0;
-
-  let html = `<p class="narrative">
-    Elder Maren stands before the shattered Shardstone. The Rift tears the sky above Millhaven.
-    Five cursed zones. Five Shards. One party of heroes.<br><br>
-    When all heroes are ready, the quest begins. You will <strong>vote democratically</strong>
-    on which zone to tackle next, fight together in turn-based combat, and share in the glory — or the defeat.
-  </p>`;
-
-  html += `<div style="margin-bottom:1rem">
-    <p style="font-family:'Cinzel',serif;font-size:.75rem;color:var(--gold-dark);letter-spacing:2px;margin-bottom:.6rem;text-transform:uppercase">
-      Heroes Present (${players.length}/8)
-    </p>
-    <div class="lobby-roster">
-      ${players.map(p => `
-        <div class="roster-card">
-          ${p.portrait ? `<img src="${p.portrait}" style="width:36px;height:36px;border-radius:50%;border:1px solid var(--gold-dark);margin-bottom:.3rem;object-fit:cover">` : `<div style="font-size:1.5rem;margin-bottom:.3rem">${p.emoji}</div>`}
-          <div class="rc-name">${p.name}</div>
-          <div class="rc-cls">${p.emoji} ${p.cls}</div>
-          <div class="${p.ready ? 'rc-ready' : 'rc-not-ready'}">${p.ready ? '✓ Ready' : '○ Not ready'}</div>
-        </div>`).join('')}
-    </div>
-  </div>`;
-
-  if (me) {
-    html += `<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
-      <button class="btn ${me.ready ? 'btn-danger' : ''}" onclick="toggleReady()">
-        ${me.ready ? '✗ Unready' : '✓ Mark Ready'}
-      </button>
-      ${allReady ? `<button class="btn" style="background:rgba(212,168,67,0.2);font-size:1rem;padding:.9rem 2.5rem;border-width:2px" onclick="startQuest()">
-        ⚔️ Begin the Quest
-      </button>` : ''}
-    </div>`;
-    if (!allReady) {
-      html += `<p style="margin-top:.8rem;font-size:.82rem;color:var(--parchment-dark)">${readyCount}/${players.length} heroes ready — all must be ready before anyone can start.</p>`;
-    } else {
-      html += `<p style="margin-top:.8rem;font-size:.82rem;color:#7acc7a">✓ All ${players.length} heroes are ready! Any hero can now start the quest.</p>`;
-    }
+function renderLobby(players,m){
+  const ready=players.filter(p=>p.ready).length, all=ready===players.length&&players.length>0;
+  let h=`<p class="narr">The Shardstone has shattered into <strong>10 cursed realms</strong> — from the Cursed Woodlands to the Eternal Rift itself. Each realm holds 5 deadly rounds, ending in a boss. Equip your kit between realms, fight together in turn order, <strong>evolve your class three times</strong> (after realms 3, 6 & 9), and seal the Rift. The deeper you go, the more brutal it becomes.<br><br>When all heroes are ready, any hero may begin.</p>`;
+  h+=`<p class="eqtitle">Heroes Present (${players.length}/8)</p><div class="roster">`+players.map(p=>
+    `<div class="rcard">${p.portrait?`<img src="${p.portrait}">`:`<div style="font-size:1.5rem">${p.emoji}</div>`}
+     <div class="rcname">${esc(p.name)}</div><div class="rccls">${p.emoji} ${esc(p.className)}</div>
+     <div class="${p.ready?'rcready':'rcnot'}">${p.ready?'✓ Ready':'○ Not ready'}</div></div>`).join('')+`</div>`;
+  if(m){
+    h+=`<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center;margin-top:.5rem">
+      <button class="btn ${m.ready?'btn-danger':''}" onclick="send({type:'ready'})">${m.ready?'✗ Unready':'✓ Mark Ready'}</button>
+      ${all?`<button class="btn btn-big" onclick="send({type:'start'})">⚔️ Begin the Quest</button>`:''}</div>`;
+    h+=all?`<p style="margin-top:.8rem;font-size:.82rem;color:#8fe09a">✓ All heroes ready — any hero can start!</p>`
+          :`<p style="margin-top:.8rem;font-size:.82rem;color:var(--parch-dim)">${ready}/${players.length} ready — all must be ready to begin.</p>`;
   }
-  return html;
+  return h;
 }
 
-function renderAdventure(world, me) {
-  const cleared = world.clearedZones || [];
-  const zones = Object.entries(ZONE_DATA);
-  const remainingCount = zones.length - cleared.length;
-
-  let html = `<p class="narrative">
-    The war council gathers around the great map. ${world.shards} Shard${world.shards !== 1 ? 's' : ''} recovered.
-    ${remainingCount} zone${remainingCount !== 1 ? 's' : ''} remain${remainingCount === 1 ? 's' : ''}.
-    Vote for the next destination — a majority carries the party forward.
-  </p>`;
-
-  // Show vote counts
-  const voteInfo = {};
-  // We don't have vote counts from server in this snapshot — handled by log
-  html += `<p style="font-family:'Cinzel',serif;font-size:.72rem;color:var(--gold-dark);letter-spacing:2px;margin-bottom:.7rem;text-transform:uppercase">Choose Next Zone</p>
-  <div class="zone-grid">`;
-
-  zones.forEach(([id, z]) => {
-    const isCleared = cleared.includes(id);
-    const isVoted = myVote === id;
-    html += `<div class="zone-card ${isCleared ? 'cleared' : ''} ${isVoted ? 'voted' : ''}"
-      onclick="${isCleared ? '' : `voteZone('${id}')`}">
-      <span class="zone-emoji">${z.emoji}</span>
-      <div class="zone-name">${z.name}</div>
-      <div class="zone-votes">${isCleared ? '✓ Cleared' : isVoted ? '✓ Your vote' : z.desc.slice(0, 35) + '…'}</div>
-    </div>`;
+function renderEquip(world,m){
+  if(!m) return '<p class="narr">Loading...</p>';
+  // init edit buffers from server state once per equip phase
+  if(editAb===null){ editAb=[...m.equippedAbilities]; editEq={...m.equip}; }
+  let h=`<p class="narr">${esc(world.stageIntro)}<br><br>Equip up to <strong>4 abilities</strong> and your gear, then confirm. The party advances when everyone is ready.</p>`;
+  if(m.equipReady){
+    h+=`<div class="waitbanner">✓ You are ready. Waiting for the rest of the party...</div>`;
+    h+=renderReadyRoster();
+    return h;
+  }
+  // ABILITIES
+  const owned=m.ownedAbilities.map(id=>({id,...ABILITIES[id]})).filter(a=>a.name);
+  h+=`<div class="eqsec"><div class="eqtitle">⚡ Abilities <span class="eqcount">(${editAb.length}/4 equipped)</span></div><div class="abgrid">`;
+  owned.forEach(a=>{
+    const on=editAb.includes(a.id);
+    h+=`<div class="abcard ${on?'on':''} ${a.tier===2?'t2':''}" onclick="toggleAbility('${a.id}')">
+      <span class="abemoji">${a.emoji}</span><div class="abinfo">
+      <div class="abname">${a.name}<span class="abmp">${a.mpCost} MP</span></div>
+      <div class="abdesc">${a.desc}</div></div>${a.tier===2?'<span class="abtier">EVOLVED</span>':''}</div>`;
   });
-  html += `</div>`;
-
-  if (me) {
-    html += `<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.5rem">
-      <button class="btn btn-sm" onclick="sendAction('rest')">💤 Rest (Restore HP/MP)</button>
-    </div>`;
-  }
-  return html;
+  h+=`</div></div>`;
+  // EQUIPMENT
+  const inv=m.inventory;
+  const bySlot=k=>[...new Set(inv.filter(id=>ITEMS[id]&&ITEMS[id].kind===k))];
+  h+=`<div class="eqsec"><div class="eqtitle">🎒 Equipment</div><div class="slotrow">`;
+  ['weapon','armor','trinket'].forEach(slot=>{
+    const items=bySlot(slot);
+    h+=`<div class="eqslot"><div class="slotlabel">${slot}</div><div class="eqitems">`;
+    if(!items.length) h+=`<span class="eqempty">none owned</span>`;
+    items.forEach(id=>{ const it=ITEMS[id]; const on=editEq[slot]===id;
+      h+=`<div class="eqitem ${on?'on':''}" onclick="toggleEquip('${slot}','${id}')">${it.emoji}<span class="tip">${it.name}: ${it.desc}</span></div>`; });
+    h+=`</div></div>`;
+  });
+  h+=`</div></div>`;
+  // consumables preview
+  const cons=inv.filter(id=>ITEMS[id]&&ITEMS[id].kind==='consumable');
+  const cc={}; cons.forEach(id=>cc[id]=(cc[id]||0)+1);
+  h+=`<div class="eqsec"><div class="eqtitle">🧪 Consumables (carried into battle)</div><div class="eqitems">`;
+  if(!Object.keys(cc).length) h+=`<span class="eqempty">none</span>`;
+  else Object.entries(cc).forEach(([id,n])=>{const it=ITEMS[id]; h+=`<div class="eqitem">${it.emoji}${n>1?`<sub style="font-size:.6rem">×${n}</sub>`:''}<span class="tip">${it.name}: ${it.desc}</span></div>`;});
+  h+=`</div></div>`;
+  h+=`<button class="btn btn-big" onclick="confirmEquip()">⚔️ Confirm & Ready</button>`;
+  return h;
+}
+function renderReadyRoster(){
+  if(!last) return '';
+  return `<div class="roster">`+last.players.map(p=>
+    `<div class="rcard">${p.portrait?`<img src="${p.portrait}">`:`<div style="font-size:1.5rem">${p.emoji}</div>`}
+     <div class="rcname">${esc(p.name)}</div><div class="${p.equipReady?'rcready':'rcnot'}">${p.equipReady?'✓ Ready':'○ Equipping...'}</div></div>`).join('')+`</div>`;
+}
+function toggleAbility(id){
+  if(!editAb) return;
+  const i=editAb.indexOf(id);
+  if(i>=0) editAb.splice(i,1);
+  else { if(editAb.length>=4){ toast('Max 4 abilities!'); return; } editAb.push(id); }
+  renderScene(last);
+}
+function toggleEquip(slot,id){
+  if(!editEq) return;
+  editEq[slot]=editEq[slot]===id?null:id;
+  renderScene(last);
+}
+function confirmEquip(){
+  if(!editAb||editAb.length===0){ toast('Equip at least 1 ability!'); return; }
+  send({type:'equip',abilities:editAb,equip:editEq});
+  editAb=null; editEq=null;
 }
 
-function renderCombat(world, me, players) {
-  const enemy = world.combat?.enemy;
-  if (!enemy) return '<p>Loading combat...</p>';
-
-  const hpPct = Math.round(enemy.hp / enemy.maxHp * 100);
-  const isMyTurn = isItMyTurn(world, players);
-
-  let html = `<div class="combat-card">
-    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.5rem">
-      <span style="font-size:2.5rem;animation:float 3s ease-in-out infinite;display:inline-block">${enemy.emoji}</span>
-      <div style="flex:1">
-        <div class="enemy-name">${enemy.name}</div>
-        <div class="big-bar-wrap">
-          <div class="big-bar-label"><span>HP</span><span>${enemy.hp} / ${enemy.maxHp}</span></div>
-          <div class="big-bar"><div class="big-bar-fill" style="width:${hpPct}%"></div></div>
-        </div>
-      </div>
-    </div>
-  </div>`;
-
-  if (isMyTurn) {
-    html += `<div class="your-turn-banner">⚔️ IT'S YOUR TURN — Choose an action!</div>`;
-    if (me) {
-      const cls = me.cls;
-      const skills = {
-        warrior: ['Power Strike (8 MP)','Shield Bash (5 MP)'],
-        mage:    ['Fireball (18 MP)', 'Frost Nova (15 MP)'],
-        rogue:   ['Backstab (10 MP)', 'Smoke Bomb (12 MP)'],
-        ranger:  ["Eagle Shot (10 MP)", "Nature's Heal (20 MP)"],
-      }[cls] || ['Skill 1','Skill 2'];
-
-      const hasHPot = (me.inventory?.filter(i=>i==='healthPotion').length || 0) > 0;
-      const hasMPot = (me.inventory?.filter(i=>i==='manaPotion').length || 0) > 0;
-
-      html += `<div class="combat-actions">
-        <button class="btn btn-sm" onclick="sendAction('combat_action','attack')">⚔️ Attack</button>
-        <button class="btn btn-sm" onclick="sendAction('combat_action','skill1')">${skills[0]}</button>
-        <button class="btn btn-sm" onclick="sendAction('combat_action','skill2')">${skills[1]}</button>
-        <button class="btn btn-sm ${hasHPot ? '' : 'btn-danger'}" ${hasHPot ? '' : 'disabled'} onclick="sendAction('combat_action','use_potion')">🧪 Health Potion${me.inventory ? ` (${me.inventory.filter(i=>i==='healthPotion').length})` : ''}</button>
-        <button class="btn btn-sm ${hasMPot ? '' : 'btn-danger'}" ${hasMPot ? '' : 'disabled'} onclick="sendAction('combat_action','use_mana_potion')">💧 Mana Potion${me.inventory ? ` (${me.inventory.filter(i=>i==='manaPotion').length})` : ''}</button>
-        <button class="btn btn-sm" onclick="sendAction('combat_action','pass')">😶 Pass</button>
-      </div>`;
-    }
+function renderCombat(world,m,players){
+  const e=world.enemy; if(!e) return '<p class="narr">Loading combat...</p>';
+  const myTurn=world.currentTurnId===sessionId;
+  let h=`<div class="ecard"><div class="ehead"><span class="esprite">${e.emoji}</span>
+    <div style="flex:1"><div class="ename">${esc(e.name)}${e.phase?`<span class="ephase">${e.phase}</span>`:''}</div>
+    <div class="emech">${esc(e.mechanicDesc||'')}</div>
+    <div class="ebar"><div class="ebarf" style="width:${Math.round(e.hp/e.maxHp*100)}%"></div></div>
+    <div class="ebarlabel"><span>HP</span><span>${e.hp} / ${e.maxHp}</span></div>
+    ${statusChips(e.status)}</div></div></div>`;
+  // round counter
+  h=`<div style="font-family:'Cinzel',serif;font-size:.74rem;letter-spacing:2px;color:var(--gold-dark);text-transform:uppercase;margin-bottom:.6rem">Round ${world.roundIdx+1} / ${world.roundsPerStage}${e.boss?' · ⚠️ BOSS':''}</div>`+h;
+  if(myTurn && m && m.alive){
+    h+=`<div class="turnbanner">⚔️ Your Turn — Choose an Action</div>`;
+    h+=`<div class="abilitybar">`;
+    // basic attack
+    h+=actBtn('attack','⚔️','Attack',0,m.mp>=0,'ability');
+    m.equippedAbilities.forEach(id=>{ const a=ABILITIES[id]; if(!a) return;
+      h+=actBtn(id,a.emoji,a.name,a.mpCost,m.mp>=a.mpCost,'ability'); });
+    // consumables
+    const cc={}; m.inventory.filter(id=>ITEMS[id]&&ITEMS[id].kind==='consumable').forEach(id=>cc[id]=(cc[id]||0)+1);
+    Object.entries(cc).forEach(([id,n])=>{ const it=ITEMS[id];
+      h+=`<div class="actbtn item-btn" onclick="useItem('${id}')"><span class="ae">${it.emoji}</span><div><div class="an">${it.name}${n>1?` ×${n}`:''}</div><div class="amp">item</div></div></div>`; });
+    h+=`<div class="actbtn pass-btn" onclick="send({type:'action',kind:'pass'})"><span class="ae">🛡️</span><div><div class="an">Guard / Pass</div></div></div>`;
+    h+=`</div>`;
+  } else if(m && !m.alive){
+    h+=`<div class="waitbanner">💀 You have fallen. Watch your party fight on...</div>`;
   } else {
-    // Find whose turn it is
-    const turnName = getWhoseTurn(world, players);
-    html += `<div class="waiting-banner">⏳ Waiting for ${turnName} to act...</div>`;
+    const turnP=players.find(p=>p.id===world.currentTurnId);
+    h+=`<div class="waitbanner">⏳ Waiting for ${turnP?esc(turnP.name):'a hero'} to act...</div>`;
   }
-
-  // Show party HP summary
-  html += `<div style="margin-top:1rem">
-    <p style="font-family:'Cinzel',serif;font-size:.68rem;letter-spacing:2px;color:var(--gold-dark);margin-bottom:.5rem;text-transform:uppercase">Party Status</p>
-    <div style="display:flex;flex-wrap:wrap;gap:.4rem">
-      ${players.map(p => `
-        <div style="font-size:.78rem;color:${p.alive ? 'var(--parchment-dark)' : '#e07070'}">
-          ${p.portrait ? `<img src="${p.portrait}" style="width:20px;height:20px;border-radius:50%;vertical-align:middle;border:1px solid var(--gold-dark)">` : p.emoji}
-          ${p.name}: ${p.hp}/${p.maxHp} HP
-        </div>`).join('')}
-    </div>
-  </div>`;
-
-  return html;
+  // party status
+  h+=`<div class="party-status"><div class="ps-title">Party</div><div class="ps-grid">`+players.map(p=>
+    `<div class="ps-chip ${p.alive?'':'dead'}">${p.portrait?`<img src="${p.portrait}">`:p.emoji} ${esc(p.name)}: ${p.hp}/${p.maxHp}</div>`).join('')+`</div></div>`;
+  return h;
 }
-
-function renderVictory(players) {
-  return `<div style="text-align:center;max-width:600px;margin:0 auto">
-    <p class="victory-title">⚔️ The Eternal Quest Is Complete! 🌟</p>
-    <p class="victory-text">
-      All five Shards blaze together in your hands. The Rift Lord's howl fades into silence.
-      The sky above Aethoria clears for the first time in weeks — blue, vast, and brilliant.
-      <br><br>
-      Elder Maren weeps as your party returns to Millhaven. The legend of these heroes
-      will echo through this world long after the stones crumble.
-    </p>
-    <div style="font-size:2rem;letter-spacing:8px;margin:1.5rem 0">💎💎💎💎💎</div>
-    <div style="margin-bottom:1rem">
-      <p style="font-family:'Cinzel',serif;font-size:.75rem;color:var(--gold-dark);letter-spacing:2px;margin-bottom:.8rem;text-transform:uppercase">Hall of Heroes</p>
-      <div style="display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center">
-        ${players.map(p => `
-          <div style="border:1px solid rgba(212,168,67,0.3);padding:.6rem 1rem;text-align:center">
-            ${p.portrait ? `<img src="${p.portrait}" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gold);display:block;margin:0 auto .4rem">` : `<div style="font-size:1.8rem">${p.emoji}</div>`}
-            <div style="font-family:'Cinzel',serif;font-size:.8rem;color:var(--gold)">${p.name}</div>
-            <div style="font-size:.7rem;color:var(--parchment-dark)">Lv${p.level} ${p.cls}</div>
-          </div>`).join('')}
-      </div>
-    </div>
-    <button class="btn" onclick="send({type:'reset_game'})">🔄 Play Again</button>
-  </div>`;
+function actBtn(id,emoji,name,mp,enabled,kind){
+  return `<button class="actbtn" ${enabled?'':'disabled'} onclick="useAbility('${id}')"><span class="ae">${emoji}</span><div><div class="an">${name}</div>${mp>0?`<div class="amp">${mp} MP</div>`:`<div class="amp">free</div>`}</div></button>`;
 }
-
-function isItMyTurn(world, players) {
-  if (!world.combat) return false;
-  // Server sends currentTurn as index into turnQueue
-  // We match by checking if the player at that position is us
-  // The server tracks turn by sessionId; we approximate from world state
-  // The server broadcast tells currentTurn index. We need to match player id
-  // Since we don't have the full queue exposed, we rely on log to show turns
-  // Instead the server now broadcasts whose turn it is in the log, so check self
-  // Simple approach: server logs "It's X's turn!" — we check our player name match
-  const me = players.find(p => p.id === sessionId);
-  if (!me) return false;
-  // The combat.currentTurn is an index; we don't know the queue order from client
-  // To fix this properly, expose turnPlayerId from server
-  // For now: check recent log for "It's {myName}'s turn!"
-  const log = world.combatLog || [];
-  for (let i = log.length - 1; i >= 0; i--) {
-    const entry = log[i];
-    if (entry.type === 'system') {
-      if (entry.msg.includes("'s turn!")) {
-        return entry.msg.includes(me.name + "'s turn!");
-      }
-      if (entry.msg.includes('defeated') || entry.msg.includes('retreats') || entry.msg.includes('cancelled')) break;
-    }
-    if (entry.type === 'player' || entry.type === 'enemy' || entry.type === 'heal') break;
+function useAbility(id){
+  const m=me(); if(!m) return;
+  // ranger single-target heal -> pick lowest ally; others no target
+  let targetId=null;
+  if(id==='healingwind'){
+    const allies=last.players.filter(p=>p.alive).sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp));
+    targetId=allies.length?allies[0].id:m.id;
   }
-  return false;
+  send({type:'action',kind:'ability',payload:{abilityId:id,targetId}});
 }
+function useItem(id){ send({type:'action',kind:'item',payload:{itemId:id}}); }
 
-function getWhoseTurn(world, players) {
-  const log = world.combatLog || [];
-  for (let i = log.length - 1; i >= 0; i--) {
-    const entry = log[i];
-    if (entry.type === 'system' && entry.msg.includes("'s turn!")) {
-      const match = entry.msg.match(/🎯 It's (.+)'s turn!/);
-      if (match) return match[1];
-    }
-    if (entry.type === 'player' || entry.type === 'enemy') break;
+function renderLoot(world,m){
+  if(!m) return '<p class="narr">Loading...</p>';
+  if(m.lootPicked){
+    return `<p class="narr">You claimed your reward. Waiting for the rest of the party to choose...</p>`+renderLootRoster();
   }
-  return 'someone';
+  const offers=world.lootOffers[sessionId]||[];
+  let h=`<p class="narr">The fallen enemy left spoils. <strong>Choose one reward</strong> to carry forward — it's stored in your kit for the rest of the run.</p><div class="lootgrid">`;
+  offers.forEach(id=>{ const it=ITEMS[id]; if(!it) return;
+    h+=`<div class="lootcard" onclick="pickLoot('${id}')"><span class="le">${it.emoji}</span><div class="ln">${it.name}</div><div class="ld">${it.desc}</div></div>`; });
+  h+=`</div>`;
+  return h;
+}
+function renderLootRoster(){
+  if(!last) return '';
+  return `<div class="roster">`+last.players.map(p=>
+    `<div class="rcard">${p.portrait?`<img src="${p.portrait}">`:`<div style="font-size:1.5rem">${p.emoji}</div>`}
+     <div class="rcname">${esc(p.name)}</div><div class="${p.lootPicked?'rcready':'rcnot'}">${p.lootPicked?'✓ Chosen':'○ Choosing...'}</div></div>`).join('')+`</div>`;
+}
+function pickLoot(id){ send({type:'loot',itemId:id}); }
+
+function renderEnd(players,win){
+  let h=`<div style="text-align:center;max-width:620px;margin:0 auto">`;
+  if(win){
+    h+=`<p class="vtitle">⚔️ The Eternal Quest Complete! 🌟</p>
+      <p class="vtext">Both Shards blaze as one. The Rift seals with a sound like the world exhaling. Aethoria is saved — and the legend of these heroes will echo for a thousand years.</p>
+      <div style="font-size:1.8rem;letter-spacing:8px;margin:1.2rem 0">💎 ×10</div>`;
+  } else {
+    h+=`<p class="vtitle bad">💀 The Party Has Fallen</p>
+      <p class="vtext">Darkness floods through the unsealed Rift. But legends do not end here — gather your strength and try again.</p>`;
+  }
+  h+=`<div class="ps-title" style="text-align:center;margin-bottom:.6rem">Hall of Heroes</div><div style="display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center">`+
+    players.map(p=>`<div class="rcard">${p.portrait?`<img src="${p.portrait}" style="width:44px;height:44px">`:`<div style="font-size:1.8rem">${p.emoji}</div>`}
+      <div class="rcname">${esc(p.name)}</div><div class="rccls">L${p.level} ${esc(p.className)}</div></div>`).join('')+`</div>`;
+  h+=`<button class="btn btn-big" style="margin-top:1.4rem" onclick="send({type:'reset'})">🔄 Play Again</button></div>`;
+  return h;
 }
 
-function renderLog(state) {
-  const log = document.getElementById('log-panel');
-  const entries = (state.world.combatLog || []).slice(-40);
-  log.innerHTML = entries.map(e =>
-    `<div class="log-${e.type || 'system'}">${escHtml(e.msg)}</div>`
-  ).join('');
-  log.scrollTop = log.scrollHeight;
+// reset edit buffers when leaving equip
+let prevPhase=null;
+const origRender=render;
+render=function(s){ if(s.world.phase!=='equip'&&prevPhase==='equip'){editAb=null;editEq=null;} prevPhase=s.world.phase; origRender(s); };
+
+function renderLog(s){
+  const el=document.getElementById('log');
+  el.innerHTML=(s.world.log||[]).slice(-40).map(e=>`<div class="l-${e.type||'system'}">${esc(e.msg)}</div>`).join('');
+  el.scrollTop=el.scrollHeight;
 }
-
-function renderChat(state) {
-  const panel = document.getElementById('chat-panel');
-  const entries = (state.world.chatLog || []).slice(-40);
-  panel.innerHTML = entries.map(e =>
-    `<div class="chat-entry"><span class="chat-name">${escHtml(e.playerName)}</span>: ${escHtml(e.msg)}</div>`
-  ).join('');
-  panel.scrollTop = panel.scrollHeight;
+function renderChat(s){
+  const el=document.getElementById('chat');
+  el.innerHTML=(s.world.chat||[]).slice(-40).map(e=>`<div class="c-entry"><span class="c-name">${esc(e.name)}</span>: ${esc(e.msg)}</div>`).join('');
+  el.scrollTop=el.scrollHeight;
 }
-
-// ═══════════════════════════════════════════════
-// ACTIONS
-// ═══════════════════════════════════════════════
-function toggleReady() { send({ type: 'ready' }); }
-function startQuest() { send({ type: 'start_game' }); }
-
-function voteZone(zoneId) {
-  myVote = zoneId;
-  send({ type: 'vote_zone', zoneId });
+function showTab(t){
+  document.getElementById('log').classList.toggle('on',t==='log');
+  document.getElementById('chat').classList.toggle('on',t==='chat');
+  document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('on',b.textContent.toLowerCase().includes(t==='log'?'battle':'chat')));
 }
+function sendChat(){ const i=document.getElementById('cinput'); const t=i.value.trim(); if(!t) return; send({type:'chat',text:t}); i.value=''; }
+document.getElementById('cinput').addEventListener('keydown',e=>{ if(e.key==='Enter') sendChat(); });
 
-function sendAction(type, action, data) {
-  if (type === 'combat_action') send({ type, action, data });
-  else if (type === 'rest') send({ type: 'rest' });
-}
+function esc(s){ return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-function sendChat() {
-  const input = document.getElementById('chat-input');
-  const text = input.value.trim();
-  if (!text) return;
-  send({ type: 'chat', text });
-  input.value = '';
-}
+// embers
+(function(){ const f=document.getElementById('embers'); if(!f) return;
+  if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  for(let i=0;i<24;i++){ const e=document.createElement('div'); e.className='ember'; e.style.left=Math.random()*100+'%';
+    const d=8+Math.random()*10; e.style.animationDuration=d+'s'; e.style.animationDelay=(-Math.random()*d)+'s';
+    const sz=2+Math.random()*3; e.style.width=sz+'px'; e.style.height=sz+'px'; f.appendChild(e); } })();
 
-document.getElementById('chat-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') sendChat();
-});
-
-// ═══════════════════════════════════════════════
-// TABS
-// ═══════════════════════════════════════════════
-function showTab(tab) {
-  document.getElementById('log-panel').classList.toggle('active', tab === 'log');
-  document.getElementById('chat-panel').classList.toggle('active', tab === 'chat');
-  document.querySelectorAll('.tab-btn').forEach(b =>
-    b.classList.toggle('active', b.textContent.toLowerCase() === (tab === 'log' ? 'battle log' : 'party chat'))
-  );
-}
-
-// ═══════════════════════════════════════════════
-// UTILS
-// ═══════════════════════════════════════════════
-function showFloater(text, color) {
-  const f = document.createElement('div');
-  f.className = 'floater';
-  f.textContent = text;
-  f.style.cssText = `color:${color};left:${40 + Math.random() * 20}%;top:${30 + Math.random() * 20}%`;
-  document.body.appendChild(f);
-  setTimeout(() => f.remove(), 1200);
-}
-
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/"/g,'&quot;');
-}
-
-// ═══════════════════════════════════════════════
-// INIT
-// ═══════════════════════════════════════════════
+buildClassCards();
 connect();
 </script>
 </body>

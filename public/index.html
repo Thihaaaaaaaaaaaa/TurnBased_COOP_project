@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Eternal Quest — 8-Player Co-op RPG</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Crimson+Pro:ital,wght@0,400;0,600;1,400&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --gold:#d4a843;--gold-dark:#a07820;--gold-light:#f0c86a;
+  --parchment:#f5e6c8;--parchment-dark:#e8d4a0;
+  --ink:#2a1a05;--ink-light:#5a3a15;
+  --blood:#8b1a1a;
+  --shadow:rgba(0,0,0,0.7);
+}
+html,body{height:100%;overflow:hidden}
+body{
+  background:#080604;
+  font-family:'Crimson Pro',serif;
+  color:var(--parchment);
+}
+
+/* ── LAYOUT ── */
+#app{display:flex;height:100vh;overflow:hidden}
+#sidebar{
+  width:220px;flex-shrink:0;
+  background:rgba(0,0,0,0.7);
+  border-right:1px solid rgba(212,168,67,0.15);
+  display:flex;flex-direction:column;overflow:hidden;
+}
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+#scene-panel{flex:1;overflow-y:auto;padding:1.5rem;
+  background:radial-gradient(ellipse at 40% 20%,#130c02 0%,#080604 70%)}
+#bottom-panel{
+  height:220px;flex-shrink:0;
+  border-top:1px solid rgba(212,168,67,0.15);
+  background:rgba(0,0,0,0.6);
+  display:flex;flex-direction:column;
+}
+
+/* ── SCREENS ── */
+.screen{display:none;position:fixed;inset:0;z-index:100;
+  align-items:center;justify-content:center;flex-direction:column;
+  background:radial-gradient(ellipse at center top,#1a0f02,#080604);
+  padding:2rem;overflow-y:auto;}
+.screen.active{display:flex}
+
+/* title */
+.title-badge{
+  font-family:'Cinzel',serif;font-size:10px;letter-spacing:7px;
+  color:var(--gold-dark);text-transform:uppercase;margin-bottom:1rem;
+}
+.game-title{
+  font-family:'Cinzel',serif;font-weight:900;
+  font-size:clamp(2.2rem,5vw,4.5rem);
+  color:var(--gold);text-align:center;line-height:1;margin-bottom:.4rem;
+}
+.game-sub{
+  font-family:'Cinzel',serif;
+  font-size:clamp(.85rem,1.8vw,1.2rem);
+  color:var(--parchment-dark);letter-spacing:3px;margin-bottom:2rem;
+}
+.divider{width:280px;height:1px;background:linear-gradient(to right,transparent,var(--gold),transparent);margin:1.2rem auto}
+
+/* upload */
+.upload-zone{
+  border:2px dashed var(--gold-dark);padding:1.8rem 3rem;
+  text-align:center;cursor:pointer;transition:all .3s;
+  background:rgba(212,168,67,0.04);margin-bottom:1.5rem;max-width:380px;width:100%;
+}
+.upload-zone:hover{border-color:var(--gold);background:rgba(212,168,67,0.09)}
+.upload-zone p{color:var(--parchment-dark);font-size:.95rem}
+.upload-zone strong{color:var(--gold)}
+#file-input{display:none}
+.portrait-wrap{
+  width:110px;height:110px;border-radius:50%;overflow:hidden;
+  border:2px solid var(--gold);margin:0 auto 1.5rem;display:none;
+}
+.portrait-wrap img{width:100%;height:100%;object-fit:cover}
+
+/* class grid */
+.class-grid{display:flex;gap:.7rem;flex-wrap:wrap;justify-content:center;margin-bottom:1.5rem;max-width:480px}
+.class-card{
+  border:1px solid rgba(212,168,67,0.3);padding:1rem 1.2rem;
+  cursor:pointer;transition:all .25s;min-width:100px;text-align:center;
+  background:rgba(0,0,0,0.3);
+}
+.class-card:hover,.class-card.sel{border-color:var(--gold);background:rgba(212,168,67,0.1);transform:translateY(-2px)}
+.class-card .ci{font-size:1.8rem;display:block;margin-bottom:.4rem}
+.class-card .cn{font-family:'Cinzel',serif;font-size:.8rem;color:var(--gold)}
+.class-card .cd{font-size:.7rem;color:var(--parchment-dark);margin-top:.2rem}
+
+/* inputs */
+.field-label{font-family:'Cinzel',serif;font-size:.72rem;letter-spacing:2px;color:var(--gold-dark);display:block;margin-bottom:.4rem;text-transform:uppercase}
+.text-input{
+  background:rgba(0,0,0,0.5);border:1px solid rgba(212,168,67,0.35);
+  color:var(--parchment);padding:.65rem 1rem;font-family:'Crimson Pro',serif;
+  font-size:1rem;width:260px;outline:none;text-align:center;
+}
+.text-input:focus{border-color:var(--gold)}
+
+/* buttons */
+.btn{
+  font-family:'Cinzel',serif;font-size:.85rem;letter-spacing:2px;
+  padding:.8rem 2.2rem;border:1px solid var(--gold);
+  background:rgba(212,168,67,0.08);color:var(--gold);cursor:pointer;
+  transition:all .25s;text-transform:uppercase;
+}
+.btn:hover:not(:disabled){background:rgba(212,168,67,0.18);transform:translateY(-1px)}
+.btn:disabled{opacity:.35;cursor:not-allowed;transform:none}
+.btn-sm{padding:.5rem 1.2rem;font-size:.72rem}
+.btn-danger{border-color:#8b1a1a;color:#e07070}
+.btn-danger:hover:not(:disabled){background:rgba(139,26,26,.2)}
+
+/* lobby full */
+#lobby-full-screen p{text-align:center;font-size:1.1rem;margin-bottom:1rem;color:var(--parchment-dark)}
+.slot-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:.5rem;margin:1rem 0;max-width:440px}
+.slot{
+  border:1px solid rgba(212,168,67,0.2);padding:.6rem;text-align:center;
+  font-size:.72rem;color:var(--parchment-dark);
+}
+.slot.occupied{border-color:var(--gold-dark);color:var(--gold)}
+
+/* ── SIDEBAR ── */
+#sidebar-header{
+  padding:.8rem .8rem .4rem;border-bottom:1px solid rgba(212,168,67,0.1);
+  font-family:'Cinzel',serif;font-size:.65rem;letter-spacing:3px;
+  color:var(--gold-dark);text-transform:uppercase;
+}
+#party-list{flex:1;overflow-y:auto;padding:.5rem}
+.party-member{
+  display:flex;align-items:center;gap:.5rem;
+  padding:.45rem .3rem;border-bottom:1px solid rgba(255,255,255,0.04);
+}
+.pm-portrait{
+  width:34px;height:34px;border-radius:50%;flex-shrink:0;
+  border:1.5px solid var(--gold-dark);overflow:hidden;object-fit:cover;
+  font-size:1.1rem;display:flex;align-items:center;justify-content:center;
+  background:#1a1005;
+}
+.pm-portrait img{width:100%;height:100%;object-fit:cover;border-radius:50%}
+.pm-info{flex:1;min-width:0}
+.pm-name{font-family:'Cinzel',serif;font-size:.72rem;color:var(--gold);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.pm-cls{font-size:.65rem;color:var(--parchment-dark)}
+.pm-bars{display:flex;flex-direction:column;gap:2px;margin-top:2px}
+.pm-bar{height:4px;background:rgba(255,255,255,0.08);border-radius:1px;overflow:hidden}
+.pm-bar-fill{height:100%;border-radius:1px;transition:width .4s}
+.hp-bar{background:#2d8a2d}
+.mp-bar{background:#1a5fa0}
+.pm-dead{opacity:.4}
+.pm-turn{outline:1px solid var(--gold);outline-offset:2px}
+.pm-you{position:relative}
+.pm-you::after{content:'YOU';position:absolute;top:0;right:0;font-size:.5rem;background:var(--gold);color:#000;padding:1px 3px;font-family:'Cinzel',serif}
+
+#sidebar-footer{
+  padding:.8rem;border-top:1px solid rgba(212,168,67,0.1);
+}
+#shard-display{font-size:1.1rem;letter-spacing:3px;margin-bottom:.4rem}
+#player-count-badge{font-size:.7rem;color:var(--parchment-dark)}
+#self-stats{font-size:.72rem;color:var(--parchment-dark);margin-top:.5rem;line-height:1.7}
+.stat-row{display:flex;justify-content:space-between}
+.stat-val{color:var(--gold)}
+
+/* ── SCENE ── */
+.loc-header{display:flex;align-items:center;gap:.8rem;margin-bottom:1rem}
+.loc-emoji{font-size:1.5rem}
+.loc-name{font-family:'Cinzel',serif;font-size:1.2rem;color:var(--gold)}
+.phase-badge{
+  font-size:.65rem;font-family:'Cinzel',serif;letter-spacing:2px;
+  padding:2px 8px;border:1px solid currentColor;text-transform:uppercase;margin-left:auto;
+}
+.phase-adventure{color:#2d8a2d;border-color:#2d8a2d}
+.phase-combat{color:#e07070;border-color:#e07070;animation:pulseBadge 1s ease-in-out infinite}
+.phase-lobby{color:var(--gold-dark);border-color:var(--gold-dark)}
+.phase-victory{color:var(--gold);border-color:var(--gold)}
+@keyframes pulseBadge{0%,100%{opacity:1}50%{opacity:.6}}
+
+.narrative{
+  font-size:1rem;line-height:1.9;color:var(--parchment);font-style:italic;
+  border-left:2px solid var(--gold-dark);padding-left:.9rem;margin-bottom:1.2rem;max-width:680px;
+}
+.action-grid{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:1rem;max-width:680px}
+
+/* vote zone cards */
+.zone-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.6rem;max-width:700px;margin-bottom:1rem}
+.zone-card{
+  border:1px solid rgba(212,168,67,0.25);padding:.9rem;cursor:pointer;
+  transition:all .25s;background:rgba(0,0,0,0.3);text-align:center;
+}
+.zone-card:hover:not(.cleared):not(.voted){border-color:var(--gold);background:rgba(212,168,67,0.1);transform:translateY(-2px)}
+.zone-card.cleared{opacity:.4;cursor:not-allowed;border-style:dashed}
+.zone-card.voted{border-color:var(--gold);background:rgba(212,168,67,0.15)}
+.zone-emoji{font-size:1.8rem;display:block;margin-bottom:.4rem}
+.zone-name{font-family:'Cinzel',serif;font-size:.75rem;color:var(--gold)}
+.zone-votes{font-size:.65rem;color:var(--parchment-dark);margin-top:.2rem}
+
+/* combat */
+.combat-card{
+  background:rgba(139,26,26,0.12);border:1px solid rgba(139,26,26,0.35);
+  padding:1.2rem;margin-bottom:1rem;max-width:680px;
+}
+.enemy-name{font-family:'Cinzel',serif;font-size:1.1rem;color:#e05050;margin-bottom:.5rem}
+.enemy-sprite{font-size:3.5rem;display:block;text-align:center;margin-bottom:.8rem;animation:float 3s ease-in-out infinite}
+@keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+.big-bar-wrap{margin-bottom:.8rem}
+.big-bar-label{font-size:.75rem;color:#e07070;display:flex;justify-content:space-between;margin-bottom:4px}
+.big-bar{height:14px;background:rgba(255,255,255,0.08);border-radius:3px;overflow:hidden}
+.big-bar-fill{height:100%;background:linear-gradient(to right,#8b1a1a,#e03030);transition:width .5s}
+.your-turn-banner{
+  background:rgba(212,168,67,0.12);border:1px solid var(--gold);
+  padding:.5rem 1rem;font-family:'Cinzel',serif;font-size:.8rem;
+  color:var(--gold);text-align:center;margin-bottom:.8rem;
+  animation:pulseBadge 1.2s ease-in-out infinite;
+}
+.waiting-banner{
+  background:rgba(0,0,0,0.2);border:1px solid rgba(212,168,67,0.2);
+  padding:.5rem 1rem;font-size:.85rem;color:var(--parchment-dark);
+  text-align:center;margin-bottom:.8rem;
+}
+.combat-actions{display:flex;flex-wrap:wrap;gap:.5rem}
+
+/* lobby */
+.lobby-roster{display:flex;flex-wrap:wrap;gap:.6rem;margin:1rem 0;max-width:680px}
+.roster-card{
+  border:1px solid rgba(212,168,67,0.2);padding:.7rem .9rem;
+  min-width:140px;background:rgba(0,0,0,0.3);
+}
+.rc-name{font-family:'Cinzel',serif;font-size:.8rem;color:var(--gold)}
+.rc-cls{font-size:.72rem;color:var(--parchment-dark);margin-bottom:.3rem}
+.rc-ready{font-size:.72rem;color:#2d8a2d}
+.rc-not-ready{font-size:.72rem;color:#e07070}
+
+/* victory */
+.victory-text{max-width:560px;text-align:center;font-size:1.05rem;line-height:1.9;font-style:italic;margin-bottom:1.5rem;color:var(--parchment-dark)}
+.victory-title{font-family:'Cinzel',serif;font-size:2.2rem;color:var(--gold);margin-bottom:1rem;text-align:center}
+
+/* ── BOTTOM PANEL ── */
+.tab-row{
+  display:flex;border-bottom:1px solid rgba(212,168,67,0.12);flex-shrink:0;
+}
+.tab-btn{
+  padding:.4rem .9rem;background:transparent;border:none;
+  color:var(--parchment-dark);cursor:pointer;font-family:'Cinzel',serif;
+  font-size:.65rem;letter-spacing:1px;border-bottom:2px solid transparent;
+  transition:all .2s;text-transform:uppercase;
+}
+.tab-btn.active{color:var(--gold);border-bottom-color:var(--gold)}
+#log-panel,#chat-panel{display:none;flex:1;overflow-y:auto;padding:.6rem .8rem;font-size:.85rem;line-height:1.8}
+#log-panel.active,#chat-panel.active{display:block}
+.log-player{color:#7acc7a}.log-enemy{color:#e07070}.log-system{color:var(--gold-light)}
+.log-item{color:#88ccee}.log-heal{color:#88eeaa}
+.chat-entry{color:var(--parchment-dark)}.chat-name{color:var(--gold);font-family:'Cinzel',serif;font-size:.8rem}
+.chat-input-row{
+  display:flex;gap:.4rem;padding:.5rem .8rem;
+  border-top:1px solid rgba(212,168,67,0.1);flex-shrink:0;
+}
+.chat-input{
+  flex:1;background:rgba(0,0,0,0.4);border:1px solid rgba(212,168,67,0.2);
+  color:var(--parchment);padding:.4rem .7rem;font-family:'Crimson Pro',serif;
+  font-size:.85rem;outline:none;
+}
+.chat-input:focus{border-color:var(--gold-dark)}
+.chat-send{
+  background:transparent;border:1px solid rgba(212,168,67,0.3);
+  color:var(--gold);cursor:pointer;padding:.4rem .8rem;font-size:.75rem;
+  font-family:'Cinzel',serif;transition:all .2s;
+}
+.chat-send:hover{background:rgba(212,168,67,0.1)}
+
+/* floaters */
+.floater{
+  position:fixed;font-family:'Cinzel',serif;font-size:1.4rem;font-weight:700;
+  pointer-events:none;z-index:9999;animation:floatUp 1.2s ease-out forwards;
+}
+@keyframes floatUp{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-80px)}}
+
+/* Scrollbars */
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(212,168,67,0.2);border-radius:2px}
+
+/* Responsive collapse */
+@media(max-width:640px){
+  #sidebar{width:180px}
+  .class-grid{flex-direction:column;align-items:center}
+}
+@media(max-width:480px){
+  #sidebar{display:none}
+  #bottom-panel{height:180px}
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════
+     SCREENS
+════════════════════════════════════════════ -->
+
+<!-- JOIN SCREEN -->
+<div class="screen active" id="join-screen">
+  <p class="title-badge">✦ 8-Player Co-op ✦</p>
+  <h1 class="game-title">THE ETERNAL QUEST</h1>
+  <p class="game-sub">Your Face · Your Legend · Your Destiny</p>
+  <div class="divider"></div>
+
+  <!-- Portrait upload -->
+  <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+    <span style="font-size:2rem;display:block;margin-bottom:.5rem">⚔️</span>
+    <p><strong>Upload your portrait</strong></p>
+    <p style="font-size:.8rem;margin-top:.3rem">Your face becomes your hero</p>
+  </div>
+  <input type="file" id="file-input" accept="image/*">
+  <div class="portrait-wrap" id="portrait-wrap"><img id="portrait-preview" src="" alt=""></div>
+
+  <!-- Class selection -->
+  <div id="class-step" style="display:none;width:100%;max-width:520px;text-align:center">
+    <label class="field-label" style="text-align:center;display:block;margin-bottom:.8rem">Choose Your Class</label>
+    <div class="class-grid">
+      <div class="class-card" data-cls="warrior" onclick="selectCls(this)">
+        <span class="ci">⚔️</span><span class="cn">Warrior</span><span class="cd">Tank & striker</span>
+      </div>
+      <div class="class-card" data-cls="mage" onclick="selectCls(this)">
+        <span class="ci">🔮</span><span class="cn">Mage</span><span class="cd">High damage spells</span>
+      </div>
+      <div class="class-card" data-cls="rogue" onclick="selectCls(this)">
+        <span class="ci">🗡️</span><span class="cn">Rogue</span><span class="cd">Fast & critical</span>
+      </div>
+      <div class="class-card" data-cls="ranger" onclick="selectCls(this)">
+        <span class="ci">🏹</span><span class="cn">Ranger</span><span class="cd">Balance & nature</span>
+      </div>
+    </div>
+
+    <div style="margin-bottom:1.2rem">
+      <label class="field-label">Your Name, Hero</label>
+      <input type="text" id="hero-name" class="text-input" placeholder="Enter name..." maxlength="22">
+    </div>
+    <button class="btn" id="join-btn" onclick="joinGame()" disabled>Enter the Realm</button>
+  </div>
+
+  <p id="join-status" style="margin-top:1rem;font-size:.8rem;color:var(--parchment-dark)">Connecting to realm...</p>
+</div>
+
+<!-- LOBBY FULL SCREEN -->
+<div class="screen" id="lobby-full-screen">
+  <p class="title-badge">✦ Realm at Capacity ✦</p>
+  <h2 style="font-family:'Cinzel',serif;font-size:1.8rem;color:var(--gold);margin-bottom:1rem">The Realm is Full</h2>
+  <p>All 8 hero slots are occupied.<br>Wait for a hero to leave, then refresh.</p>
+  <div class="divider"></div>
+  <div class="slot-grid" id="lobby-slots"></div>
+  <button class="btn btn-sm" style="margin-top:1.5rem" onclick="location.reload()">Check Again</button>
+</div>
+
+<!-- ════════════════════════════════════════════
+     MAIN GAME UI (hidden until joined)
+════════════════════════════════════════════ -->
+<div id="app" style="display:none">
+
+  <!-- SIDEBAR: Party -->
+  <div id="sidebar">
+    <div id="sidebar-header">Party — <span id="party-count">0</span>/8</div>
+    <div id="party-list"></div>
+    <div id="sidebar-footer">
+      <div id="shard-display">⬜⬜⬜⬜⬜</div>
+      <div id="player-count-badge">0/8 heroes</div>
+      <div id="self-stats"></div>
+    </div>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main">
+    <div id="scene-panel"></div>
+    <div id="bottom-panel">
+      <div class="tab-row">
+        <button class="tab-btn active" onclick="showTab('log')">Battle Log</button>
+        <button class="tab-btn" onclick="showTab('chat')">Party Chat</button>
+      </div>
+      <div id="log-panel" class="active"></div>
+      <div id="chat-panel"></div>
+      <div class="chat-input-row">
+        <input type="text" class="chat-input" id="chat-input" placeholder="Say something to the party..." maxlength="200">
+        <button class="chat-send" onclick="sendChat()">Send</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════════
+let ws = null;
+let sessionId = null;
+let myPortraitDataUrl = '';
+let selectedCls = '';
+let lastWorld = null;
+let myVote = null;
+let pingInterval = null;
+
+// ═══════════════════════════════════════════════
+// WS CONNECTION
+// ═══════════════════════════════════════════════
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(`${proto}//${location.host}`);
+
+  ws.onopen = () => {
+    document.getElementById('join-status').textContent = 'Connected! Upload your portrait to begin.';
+    pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }));
+    }, 25000);
+  };
+
+  ws.onclose = () => {
+    clearInterval(pingInterval);
+    document.getElementById('join-status').textContent = 'Disconnected. Reconnecting...';
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => {};
+
+  ws.onmessage = e => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch { return; }
+    handleMsg(msg);
+  };
+}
+
+function send(data) {
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
+}
+
+// ═══════════════════════════════════════════════
+// MESSAGE HANDLER
+// ═══════════════════════════════════════════════
+function handleMsg(msg) {
+  if (msg.type === 'session_init') {
+    sessionId = msg.sessionId;
+    document.getElementById('join-status').textContent = `Connected (${msg.playerCount}/${msg.maxPlayers} heroes present). Upload portrait to begin!`;
+    return;
+  }
+  if (msg.type === 'lobby_full') {
+    showLobbyFull(msg);
+    return;
+  }
+  if (msg.type === 'error') {
+    showFloater(msg.msg, '#e07070');
+    return;
+  }
+  if (msg.type === 'pong') return;
+
+  if (msg.type === 'world_state') {
+    lastWorld = msg;
+    render(msg);
+  }
+}
+
+// ═══════════════════════════════════════════════
+// JOIN
+// ═══════════════════════════════════════════════
+function selectCls(el) {
+  document.querySelectorAll('.class-card').forEach(c => c.classList.remove('sel'));
+  el.classList.add('sel');
+  selectedCls = el.dataset.cls;
+  checkJoinReady();
+}
+
+function checkJoinReady() {
+  document.getElementById('join-btn').disabled =
+    !(selectedCls && document.getElementById('hero-name').value.trim() && myPortraitDataUrl);
+}
+
+document.getElementById('hero-name').addEventListener('input', checkJoinReady);
+
+document.getElementById('file-input').addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    // Compress portrait to reasonable size
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const size = 200;
+      canvas.width = size; canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      const min = Math.min(img.width, img.height);
+      const sx = (img.width - min) / 2;
+      const sy = (img.height - min) / 2;
+      ctx.drawImage(img, sx, sy, min, min, 0, 0, size, size);
+      myPortraitDataUrl = canvas.toDataURL('image/jpeg', 0.7);
+
+      document.getElementById('portrait-preview').src = myPortraitDataUrl;
+      document.getElementById('portrait-wrap').style.display = 'block';
+      document.getElementById('upload-zone').style.display = 'none';
+      document.getElementById('class-step').style.display = 'block';
+      checkJoinReady();
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+function joinGame() {
+  const name = document.getElementById('hero-name').value.trim();
+  if (!name || !selectedCls || !myPortraitDataUrl) return;
+  send({ type: 'join', name, cls: selectedCls, portrait: myPortraitDataUrl });
+  document.getElementById('join-screen').classList.remove('active');
+  document.getElementById('app').style.display = 'flex';
+}
+
+function showLobbyFull(msg) {
+  document.getElementById('join-screen').classList.remove('active');
+  document.getElementById('lobby-full-screen').classList.add('active');
+}
+
+// ═══════════════════════════════════════════════
+// RENDER
+// ═══════════════════════════════════════════════
+function render(state) {
+  renderSidebar(state);
+  renderScene(state);
+  renderLog(state);
+  renderChat(state);
+}
+
+function renderSidebar(state) {
+  const { world, players, playerCount, maxPlayers } = state;
+  document.getElementById('party-count').textContent = playerCount;
+  document.getElementById('player-count-badge').textContent = `${playerCount}/${maxPlayers} heroes`;
+
+  // Shards
+  const filled = '💎'; const empty = '⬜';
+  document.getElementById('shard-display').textContent =
+    filled.repeat(world.shards) + empty.repeat(5 - world.shards);
+
+  // Self stats
+  const me = players.find(p => p.id === sessionId);
+  if (me) {
+    document.getElementById('self-stats').innerHTML = `
+      <div class="stat-row"><span>Level</span><span class="stat-val">${me.level}</span></div>
+      <div class="stat-row"><span>HP</span><span class="stat-val">${me.hp}/${me.maxHp}</span></div>
+      <div class="stat-row"><span>MP</span><span class="stat-val">${me.mp}/${me.maxMp}</span></div>
+    `;
+  }
+
+  // Party list
+  const currentTurnId = world.combat
+    ? (() => {
+        // Determine whose turn: server sends currentTurn index into queue
+        return null; // We'll highlight via combat state separately
+      })() : null;
+
+  const list = document.getElementById('party-list');
+  list.innerHTML = players.map(p => {
+    const isMe = p.id === sessionId;
+    const isTurn = world.combat?.currentTurn === players.indexOf(p); // rough
+    const hpPct = Math.round(p.hp / p.maxHp * 100);
+    const mpPct = Math.round(p.mp / p.maxMp * 100);
+    const portraitEl = p.portrait
+      ? `<div class="pm-portrait"><img src="${p.portrait}" alt=""></div>`
+      : `<div class="pm-portrait">${p.emoji}</div>`;
+
+    return `<div class="party-member ${p.alive ? '' : 'pm-dead'} ${isMe ? 'pm-you' : ''}">
+      ${portraitEl}
+      <div class="pm-info">
+        <div class="pm-name">${p.name}</div>
+        <div class="pm-cls">${p.emoji} ${p.cls} · Lv${p.level}</div>
+        <div class="pm-bars">
+          <div class="pm-bar"><div class="pm-bar-fill hp-bar" style="width:${hpPct}%"></div></div>
+          <div class="pm-bar"><div class="pm-bar-fill mp-bar" style="width:${mpPct}%"></div></div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function renderScene(state) {
+  const { world, players } = state;
+  const panel = document.getElementById('scene-panel');
+  const me = players.find(p => p.id === sessionId);
+  const phase = world.phase;
+
+  const phaseLabel = {
+    lobby: 'Lobby', adventure: 'Adventure', combat: 'Combat!', victory: 'Victory!'
+  }[phase] || phase;
+
+  let html = `<div class="loc-header">
+    <span class="loc-emoji">${phaseEmoji(phase, world)}</span>
+    <span class="loc-name">${phaseTitle(phase, world)}</span>
+    <span class="phase-badge phase-${phase}">${phaseLabel}</span>
+  </div>`;
+
+  if (phase === 'lobby') html += renderLobby(players, me);
+  else if (phase === 'adventure') html += renderAdventure(world, me);
+  else if (phase === 'combat') html += renderCombat(world, me, players);
+  else if (phase === 'victory') html += renderVictory(players);
+
+  panel.innerHTML = html;
+}
+
+function phaseEmoji(phase, world) {
+  if (phase === 'lobby') return '🏰';
+  if (phase === 'victory') return '🌟';
+  if (phase === 'combat' && world.currentZone) return zoneEmoji(world.currentZone);
+  return '🗺️';
+}
+
+function phaseTitle(phase, world) {
+  if (phase === 'lobby') return 'Millhaven — Gathering Hall';
+  if (phase === 'victory') return 'The Realm is Saved!';
+  if (phase === 'combat' && world.currentZone) return zoneName(world.currentZone);
+  return 'Millhaven — War Council';
+}
+
+const ZONE_DATA = {
+  dark_forest:    { name: 'Dark Forest',    emoji: '🌲', desc: 'A Troll guards the First Shard deep among cursed oaks.' },
+  sunken_crypt:   { name: 'Sunken Crypt',   emoji: '💀', desc: 'A Skeleton Mage commands the undead over the Second Shard.' },
+  dragons_peak:   { name: "Dragon's Peak",  emoji: '🐉', desc: 'Ancient Varathos hoards the Third Shard atop the volcano.' },
+  abyssal_shore:  { name: 'Abyssal Shore',  emoji: '🌊', desc: 'The Sea Leviathan coils around the Fourth Shard in black waters.' },
+  shadow_sanctum: { name: 'Shadow Sanctum', emoji: '🏰', desc: 'The Rift Lord itself guards the Fifth and final Shard.' },
+};
+function zoneName(z) { return ZONE_DATA[z]?.name || z; }
+function zoneEmoji(z) { return ZONE_DATA[z]?.emoji || '🗺️'; }
+
+function renderLobby(players, me) {
+  const readyCount = players.filter(p => p.ready).length;
+  const allReady = readyCount === players.length && players.length > 0;
+
+  let html = `<p class="narrative">
+    Elder Maren stands before the shattered Shardstone. The Rift tears the sky above Millhaven.
+    Five cursed zones. Five Shards. One party of heroes.<br><br>
+    When all heroes are ready, the quest begins. You will <strong>vote democratically</strong>
+    on which zone to tackle next, fight together in turn-based combat, and share in the glory — or the defeat.
+  </p>`;
+
+  html += `<div style="margin-bottom:1rem">
+    <p style="font-family:'Cinzel',serif;font-size:.75rem;color:var(--gold-dark);letter-spacing:2px;margin-bottom:.6rem;text-transform:uppercase">
+      Heroes Present (${players.length}/8)
+    </p>
+    <div class="lobby-roster">
+      ${players.map(p => `
+        <div class="roster-card">
+          ${p.portrait ? `<img src="${p.portrait}" style="width:36px;height:36px;border-radius:50%;border:1px solid var(--gold-dark);margin-bottom:.3rem;object-fit:cover">` : `<div style="font-size:1.5rem;margin-bottom:.3rem">${p.emoji}</div>`}
+          <div class="rc-name">${p.name}</div>
+          <div class="rc-cls">${p.emoji} ${p.cls}</div>
+          <div class="${p.ready ? 'rc-ready' : 'rc-not-ready'}">${p.ready ? '✓ Ready' : '○ Not ready'}</div>
+        </div>`).join('')}
+    </div>
+  </div>`;
+
+  if (me) {
+    html += `<div style="display:flex;gap:.6rem;flex-wrap:wrap;align-items:center">
+      <button class="btn ${me.ready ? 'btn-danger' : ''}" onclick="toggleReady()">
+        ${me.ready ? '✗ Unready' : '✓ Mark Ready'}
+      </button>
+      ${allReady ? `<button class="btn" style="background:rgba(212,168,67,0.2);font-size:1rem;padding:.9rem 2.5rem;border-width:2px" onclick="startQuest()">
+        ⚔️ Begin the Quest
+      </button>` : ''}
+    </div>`;
+    if (!allReady) {
+      html += `<p style="margin-top:.8rem;font-size:.82rem;color:var(--parchment-dark)">${readyCount}/${players.length} heroes ready — all must be ready before anyone can start.</p>`;
+    } else {
+      html += `<p style="margin-top:.8rem;font-size:.82rem;color:#7acc7a">✓ All ${players.length} heroes are ready! Any hero can now start the quest.</p>`;
+    }
+  }
+  return html;
+}
+
+function renderAdventure(world, me) {
+  const cleared = world.clearedZones || [];
+  const zones = Object.entries(ZONE_DATA);
+  const remainingCount = zones.length - cleared.length;
+
+  let html = `<p class="narrative">
+    The war council gathers around the great map. ${world.shards} Shard${world.shards !== 1 ? 's' : ''} recovered.
+    ${remainingCount} zone${remainingCount !== 1 ? 's' : ''} remain${remainingCount === 1 ? 's' : ''}.
+    Vote for the next destination — a majority carries the party forward.
+  </p>`;
+
+  // Show vote counts
+  const voteInfo = {};
+  // We don't have vote counts from server in this snapshot — handled by log
+  html += `<p style="font-family:'Cinzel',serif;font-size:.72rem;color:var(--gold-dark);letter-spacing:2px;margin-bottom:.7rem;text-transform:uppercase">Choose Next Zone</p>
+  <div class="zone-grid">`;
+
+  zones.forEach(([id, z]) => {
+    const isCleared = cleared.includes(id);
+    const isVoted = myVote === id;
+    html += `<div class="zone-card ${isCleared ? 'cleared' : ''} ${isVoted ? 'voted' : ''}"
+      onclick="${isCleared ? '' : `voteZone('${id}')`}">
+      <span class="zone-emoji">${z.emoji}</span>
+      <div class="zone-name">${z.name}</div>
+      <div class="zone-votes">${isCleared ? '✓ Cleared' : isVoted ? '✓ Your vote' : z.desc.slice(0, 35) + '…'}</div>
+    </div>`;
+  });
+  html += `</div>`;
+
+  if (me) {
+    html += `<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin-top:.5rem">
+      <button class="btn btn-sm" onclick="sendAction('rest')">💤 Rest (Restore HP/MP)</button>
+    </div>`;
+  }
+  return html;
+}
+
+function renderCombat(world, me, players) {
+  const enemy = world.combat?.enemy;
+  if (!enemy) return '<p>Loading combat...</p>';
+
+  const hpPct = Math.round(enemy.hp / enemy.maxHp * 100);
+  const isMyTurn = isItMyTurn(world, players);
+
+  let html = `<div class="combat-card">
+    <div style="display:flex;align-items:center;gap:1rem;margin-bottom:.5rem">
+      <span style="font-size:2.5rem;animation:float 3s ease-in-out infinite;display:inline-block">${enemy.emoji}</span>
+      <div style="flex:1">
+        <div class="enemy-name">${enemy.name}</div>
+        <div class="big-bar-wrap">
+          <div class="big-bar-label"><span>HP</span><span>${enemy.hp} / ${enemy.maxHp}</span></div>
+          <div class="big-bar"><div class="big-bar-fill" style="width:${hpPct}%"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>`;
+
+  if (isMyTurn) {
+    html += `<div class="your-turn-banner">⚔️ IT'S YOUR TURN — Choose an action!</div>`;
+    if (me) {
+      const cls = me.cls;
+      const skills = {
+        warrior: ['Power Strike (8 MP)','Shield Bash (5 MP)'],
+        mage:    ['Fireball (18 MP)', 'Frost Nova (15 MP)'],
+        rogue:   ['Backstab (10 MP)', 'Smoke Bomb (12 MP)'],
+        ranger:  ["Eagle Shot (10 MP)", "Nature's Heal (20 MP)"],
+      }[cls] || ['Skill 1','Skill 2'];
+
+      const hasHPot = (me.inventory?.filter(i=>i==='healthPotion').length || 0) > 0;
+      const hasMPot = (me.inventory?.filter(i=>i==='manaPotion').length || 0) > 0;
+
+      html += `<div class="combat-actions">
+        <button class="btn btn-sm" onclick="sendAction('combat_action','attack')">⚔️ Attack</button>
+        <button class="btn btn-sm" onclick="sendAction('combat_action','skill1')">${skills[0]}</button>
+        <button class="btn btn-sm" onclick="sendAction('combat_action','skill2')">${skills[1]}</button>
+        <button class="btn btn-sm ${hasHPot ? '' : 'btn-danger'}" ${hasHPot ? '' : 'disabled'} onclick="sendAction('combat_action','use_potion')">🧪 Health Potion${me.inventory ? ` (${me.inventory.filter(i=>i==='healthPotion').length})` : ''}</button>
+        <button class="btn btn-sm ${hasMPot ? '' : 'btn-danger'}" ${hasMPot ? '' : 'disabled'} onclick="sendAction('combat_action','use_mana_potion')">💧 Mana Potion${me.inventory ? ` (${me.inventory.filter(i=>i==='manaPotion').length})` : ''}</button>
+        <button class="btn btn-sm" onclick="sendAction('combat_action','pass')">😶 Pass</button>
+      </div>`;
+    }
+  } else {
+    // Find whose turn it is
+    const turnName = getWhoseTurn(world, players);
+    html += `<div class="waiting-banner">⏳ Waiting for ${turnName} to act...</div>`;
+  }
+
+  // Show party HP summary
+  html += `<div style="margin-top:1rem">
+    <p style="font-family:'Cinzel',serif;font-size:.68rem;letter-spacing:2px;color:var(--gold-dark);margin-bottom:.5rem;text-transform:uppercase">Party Status</p>
+    <div style="display:flex;flex-wrap:wrap;gap:.4rem">
+      ${players.map(p => `
+        <div style="font-size:.78rem;color:${p.alive ? 'var(--parchment-dark)' : '#e07070'}">
+          ${p.portrait ? `<img src="${p.portrait}" style="width:20px;height:20px;border-radius:50%;vertical-align:middle;border:1px solid var(--gold-dark)">` : p.emoji}
+          ${p.name}: ${p.hp}/${p.maxHp} HP
+        </div>`).join('')}
+    </div>
+  </div>`;
+
+  return html;
+}
+
+function renderVictory(players) {
+  return `<div style="text-align:center;max-width:600px;margin:0 auto">
+    <p class="victory-title">⚔️ The Eternal Quest Is Complete! 🌟</p>
+    <p class="victory-text">
+      All five Shards blaze together in your hands. The Rift Lord's howl fades into silence.
+      The sky above Aethoria clears for the first time in weeks — blue, vast, and brilliant.
+      <br><br>
+      Elder Maren weeps as your party returns to Millhaven. The legend of these heroes
+      will echo through this world long after the stones crumble.
+    </p>
+    <div style="font-size:2rem;letter-spacing:8px;margin:1.5rem 0">💎💎💎💎💎</div>
+    <div style="margin-bottom:1rem">
+      <p style="font-family:'Cinzel',serif;font-size:.75rem;color:var(--gold-dark);letter-spacing:2px;margin-bottom:.8rem;text-transform:uppercase">Hall of Heroes</p>
+      <div style="display:flex;flex-wrap:wrap;gap:.5rem;justify-content:center">
+        ${players.map(p => `
+          <div style="border:1px solid rgba(212,168,67,0.3);padding:.6rem 1rem;text-align:center">
+            ${p.portrait ? `<img src="${p.portrait}" style="width:44px;height:44px;border-radius:50%;border:2px solid var(--gold);display:block;margin:0 auto .4rem">` : `<div style="font-size:1.8rem">${p.emoji}</div>`}
+            <div style="font-family:'Cinzel',serif;font-size:.8rem;color:var(--gold)">${p.name}</div>
+            <div style="font-size:.7rem;color:var(--parchment-dark)">Lv${p.level} ${p.cls}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+    <button class="btn" onclick="send({type:'reset_game'})">🔄 Play Again</button>
+  </div>`;
+}
+
+function isItMyTurn(world, players) {
+  if (!world.combat) return false;
+  // Server sends currentTurn as index into turnQueue
+  // We match by checking if the player at that position is us
+  // The server tracks turn by sessionId; we approximate from world state
+  // The server broadcast tells currentTurn index. We need to match player id
+  // Since we don't have the full queue exposed, we rely on log to show turns
+  // Instead the server now broadcasts whose turn it is in the log, so check self
+  // Simple approach: server logs "It's X's turn!" — we check our player name match
+  const me = players.find(p => p.id === sessionId);
+  if (!me) return false;
+  // The combat.currentTurn is an index; we don't know the queue order from client
+  // To fix this properly, expose turnPlayerId from server
+  // For now: check recent log for "It's {myName}'s turn!"
+  const log = world.combatLog || [];
+  for (let i = log.length - 1; i >= 0; i--) {
+    const entry = log[i];
+    if (entry.type === 'system') {
+      if (entry.msg.includes("'s turn!")) {
+        return entry.msg.includes(me.name + "'s turn!");
+      }
+      if (entry.msg.includes('defeated') || entry.msg.includes('retreats') || entry.msg.includes('cancelled')) break;
+    }
+    if (entry.type === 'player' || entry.type === 'enemy' || entry.type === 'heal') break;
+  }
+  return false;
+}
+
+function getWhoseTurn(world, players) {
+  const log = world.combatLog || [];
+  for (let i = log.length - 1; i >= 0; i--) {
+    const entry = log[i];
+    if (entry.type === 'system' && entry.msg.includes("'s turn!")) {
+      const match = entry.msg.match(/🎯 It's (.+)'s turn!/);
+      if (match) return match[1];
+    }
+    if (entry.type === 'player' || entry.type === 'enemy') break;
+  }
+  return 'someone';
+}
+
+function renderLog(state) {
+  const log = document.getElementById('log-panel');
+  const entries = (state.world.combatLog || []).slice(-40);
+  log.innerHTML = entries.map(e =>
+    `<div class="log-${e.type || 'system'}">${escHtml(e.msg)}</div>`
+  ).join('');
+  log.scrollTop = log.scrollHeight;
+}
+
+function renderChat(state) {
+  const panel = document.getElementById('chat-panel');
+  const entries = (state.world.chatLog || []).slice(-40);
+  panel.innerHTML = entries.map(e =>
+    `<div class="chat-entry"><span class="chat-name">${escHtml(e.playerName)}</span>: ${escHtml(e.msg)}</div>`
+  ).join('');
+  panel.scrollTop = panel.scrollHeight;
+}
+
+// ═══════════════════════════════════════════════
+// ACTIONS
+// ═══════════════════════════════════════════════
+function toggleReady() { send({ type: 'ready' }); }
+function startQuest() { send({ type: 'start_game' }); }
+
+function voteZone(zoneId) {
+  myVote = zoneId;
+  send({ type: 'vote_zone', zoneId });
+}
+
+function sendAction(type, action, data) {
+  if (type === 'combat_action') send({ type, action, data });
+  else if (type === 'rest') send({ type: 'rest' });
+}
+
+function sendChat() {
+  const input = document.getElementById('chat-input');
+  const text = input.value.trim();
+  if (!text) return;
+  send({ type: 'chat', text });
+  input.value = '';
+}
+
+document.getElementById('chat-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') sendChat();
+});
+
+// ═══════════════════════════════════════════════
+// TABS
+// ═══════════════════════════════════════════════
+function showTab(tab) {
+  document.getElementById('log-panel').classList.toggle('active', tab === 'log');
+  document.getElementById('chat-panel').classList.toggle('active', tab === 'chat');
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active', b.textContent.toLowerCase() === (tab === 'log' ? 'battle log' : 'party chat'))
+  );
+}
+
+// ═══════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════
+function showFloater(text, color) {
+  const f = document.createElement('div');
+  f.className = 'floater';
+  f.textContent = text;
+  f.style.cssText = `color:${color};left:${40 + Math.random() * 20}%;top:${30 + Math.random() * 20}%`;
+  document.body.appendChild(f);
+  setTimeout(() => f.remove(), 1200);
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;');
+}
+
+// ═══════════════════════════════════════════════
+// INIT
+// ═══════════════════════════════════════════════
+connect();
+</script>
+</body>
+</html>

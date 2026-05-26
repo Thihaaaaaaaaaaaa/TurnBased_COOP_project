@@ -119,7 +119,7 @@ const SKILLS = {
 function CL(o){ return o; }
 const CLASSES = {
   ranger: CL({
-    id:'ranger', name:'Ranger', sprite:1936,
+    id:'ranger', name:'Ranger', sprite:1955,
     stats:{DEX:12,STR:5,LUK:3},
     skills:['quickshot','eagleeye'],
     supers:{
@@ -136,7 +136,7 @@ const CLASSES = {
     },
   }),
   mage: CL({
-    id:'mage', name:'Mage', sprite:1952,
+    id:'mage', name:'Mage', sprite:1957,
     stats:{INT:12,WIS:10},
     skills:['fireball','manapulse'],
     supers:{
@@ -153,7 +153,7 @@ const CLASSES = {
     },
   }),
   warrior: CL({
-    id:'warrior', name:'Warrior', sprite:1920,
+    id:'warrior', name:'Warrior', sprite:1908,
     stats:{STR:15,VIT:10},
     skills:['slash','guardstance'],
     supers:{
@@ -170,7 +170,7 @@ const CLASSES = {
     },
   }),
   assassin: CL({
-    id:'assassin', name:'Assassin', sprite:1928,
+    id:'assassin', name:'Assassin', sprite:1953,
     stats:{DEX:15,LUK:10},
     skills:['stab','poisonstab'],
     supers:{
@@ -187,7 +187,7 @@ const CLASSES = {
     },
   }),
   monk: CL({
-    id:'monk', name:'Monk', sprite:1944,
+    id:'monk', name:'Monk', sprite:1965,
     stats:{STR:10,DEX:10,WIS:10},
     skills:['palm','meditate'],
     supers:{
@@ -204,7 +204,7 @@ const CLASSES = {
     },
   }),
   engineer: CL({
-    id:'engineer', name:'Engineer', sprite:1960,
+    id:'engineer', name:'Engineer', sprite:1910,
     stats:{INT:15,DEX:10},
     skills:['wrench','turret'],
     supers:{
@@ -221,7 +221,7 @@ const CLASSES = {
     },
   }),
   necromancer: CL({
-    id:'necromancer', name:'Necromancer', sprite:1968,
+    id:'necromancer', name:'Necromancer', sprite:1952,
     stats:{INT:12,VIT:10},
     skills:['bonebolt','lifedrain'],
     supers:{
@@ -238,7 +238,7 @@ const CLASSES = {
     },
   }),
   elementalist: CL({
-    id:'elementalist', name:'Elementalist', sprite:1976,
+    id:'elementalist', name:'Elementalist', sprite:1961,
     stats:{INT:15,DEX:5,WIS:5},
     skills:['frostbolt','flamewave'],
     supers:{

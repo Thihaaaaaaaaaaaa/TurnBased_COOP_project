@@ -106,6 +106,8 @@ body{background:#06040a;font-family:'Crimson Pro',serif;color:var(--parch);posit
 .pm:hover{border-color:var(--edge)}
 .pm.turn{border-color:var(--gold)!important;box-shadow:0 0 0 1px var(--gold),0 0 18px -4px rgba(232,194,90,.6);background:linear-gradient(120deg,rgba(232,194,90,.15),transparent)!important}
 .pm.dead{opacity:.42;filter:grayscale(.7)}
+.pm.hurt{animation:pmHurt .45s}
+@keyframes pmHurt{0%{transform:translateX(0);background:linear-gradient(120deg,rgba(224,56,56,.5),transparent)}25%{transform:translateX(-5px)}50%{transform:translateX(4px);background:linear-gradient(120deg,rgba(224,56,56,.3),transparent)}75%{transform:translateX(-2px)}100%{transform:translateX(0)}}
 .pm.dead .pmname{color:var(--blood-br)}
 .pmpic{width:46px;height:46px;border-radius:8px;flex-shrink:0;overflow:hidden;border:2px solid var(--gold-d);position:relative;background:radial-gradient(circle,#2a1c0a,#120b04);display:flex;align-items:center;justify-content:center}
 .pmpic img{width:100%;height:100%;object-fit:cover}
@@ -244,6 +246,18 @@ body{background:#06040a;font-family:'Crimson Pro',serif;color:var(--parch);posit
 .floater{position:fixed;font-family:'Cinzel Decorative',serif;font-size:1.6rem;font-weight:900;pointer-events:none;z-index:9998;text-shadow:0 0 16px currentColor,0 2px 4px rgba(0,0,0,.8);animation:floatUp 1.2s cubic-bezier(.2,.6,.3,1) forwards}
 .floater.dmg{color:#ff6a6a}.floater.heal{color:#8fefc4}.floater.crit{color:#ffd23f;font-size:2.1rem}
 @keyframes floatUp{0%{opacity:0;transform:translateY(0) scale(.6)}15%{opacity:1;transform:translateY(-12px) scale(1.1)}100%{opacity:0;transform:translateY(-90px)}}
+.picker-overlay{position:fixed;inset:0;z-index:9990;display:flex;align-items:center;justify-content:center;background:rgba(6,4,10,.78);backdrop-filter:blur(3px);animation:fade .2s}
+.picker-box{background:linear-gradient(170deg,rgba(30,20,8,.98),rgba(14,9,3,.99));border:1px solid var(--gold-d);border-radius:14px;padding:1.4rem 1.6rem;max-width:560px;width:90%;box-shadow:0 24px 60px -20px rgba(0,0,0,.9),0 0 0 1px rgba(232,194,90,.15)}
+.picker-title{font-family:'Cinzel',serif;font-weight:600;font-size:.86rem;letter-spacing:1.5px;color:var(--gold-l);text-align:center;margin-bottom:1rem;text-transform:uppercase}
+.healtgts{display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:.6rem;margin-bottom:1rem}
+.healtgt{border:1px solid var(--edge);border-radius:10px;padding:.7rem;text-align:center;cursor:pointer;transition:.2s;background:linear-gradient(160deg,rgba(40,28,12,.4),rgba(10,7,3,.5));position:relative}
+.healtgt:hover{border-color:var(--emerald);transform:translateY(-3px);box-shadow:0 10px 28px -14px rgba(62,168,104,.7)}
+.healtgt.low{border-color:rgba(62,168,104,.6)}
+.healtgt img{width:44px;height:44px;border-radius:8px;object-fit:cover;border:2px solid var(--gold-d);margin-bottom:.35rem}
+.healtgt .csprite{margin:0 auto .35rem}
+.htname{font-family:'Cinzel',serif;font-size:.74rem;color:var(--gold-l);margin-bottom:.35rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.htlow{font-size:.6rem;color:var(--emerald);font-family:'Cinzel',serif;letter-spacing:1px;margin-top:.3rem;text-transform:uppercase}
+.picker-box .btn{display:block;margin:0 auto}
 ::-webkit-scrollbar{width:6px;height:6px}::-webkit-scrollbar-track{background:rgba(0,0,0,.2)}::-webkit-scrollbar-thumb{background:linear-gradient(180deg,var(--gold-d),var(--gold-deep));border-radius:3px}
 #jstatus{margin-top:1rem;font-size:.8rem;color:var(--parch-faint);font-family:'Cinzel',serif;letter-spacing:1px}
 @media(max-width:680px){#sidebar{width:210px}}
@@ -304,7 +318,7 @@ function spr(idx,size){ const x=(idx%COLS)*SZ, y=Math.floor(idx/COLS)*SZ; const 
 function sprDiv(idx,cls,size){ return `<span class="spr ${cls||''}" style="${spr(idx,size)}"></span>`; }
 const SKILLS={"basic":{"name":"Strike","sprite":1448,"mp":0,"desc":"A basic attack.","type":"attack"},"quickshot":{"name":"Quick Shot","sprite":1131,"mp":6,"desc":"Fire 3 arrows (20-30 each).","type":"attack"},"eagleeye":{"name":"Eagle Eye","sprite":1126,"mp":5,"desc":"+25% accuracy & crit for 3 rounds.","type":"buff"},"wolf":{"name":"Wolf Companion","sprite":1162,"mp":10,"desc":"Beast strikes (30-60).","type":"attack"},"predator":{"name":"Predator Bond","sprite":1130,"mp":8,"desc":"+40% speed, party haste.","type":"buff"},"alpha":{"name":"Alpha Summon","sprite":1163,"mp":20,"desc":"Massive beast assault (150-220).","type":"attack"},"frenzy":{"name":"Frenzy Roar","sprite":1152,"mp":16,"desc":"+35% team damage for 3 rounds.","type":"buff"},"phoenix":{"name":"Spirit Phoenix","sprite":1174,"mp":22,"desc":"Phoenix fire (180-260).","type":"magic"},"natureheal":{"name":"Nature Heal","sprite":1175,"mp":18,"desc":"Heal an ally 100-200.","type":"heal"},"pierce":{"name":"Piercing Shot","sprite":1145,"mp":9,"desc":"Armor-piercing shot (70-110).","type":"attack"},"deadeye":{"name":"Deadeye","sprite":1170,"mp":7,"desc":"+30% crit for 3 rounds.","type":"buff"},"shadowvolley":{"name":"Shadow Volley","sprite":1180,"mp":20,"desc":"10 shadow arrows (35-50 each).","type":"attack"},"blink":{"name":"Blink Shot","sprite":1190,"mp":22,"desc":"Teleport strike (180-230).","type":"attack"},"thunderarrow":{"name":"Thunder Arrow","sprite":1196,"mp":24,"desc":"Thunder bolt (220-320) + stun.","type":"magic"},"stormbarrage":{"name":"Storm Barrage","sprite":1198,"mp":22,"desc":"8 storm bolts (40-60 each).","type":"magic"},"fireball":{"name":"Fireball","sprite":1185,"mp":8,"desc":"Hurl fire (45-70) + Burn.","type":"magic"},"manapulse":{"name":"Mana Pulse","sprite":1156,"mp":6,"desc":"Push & weaken enemy.","type":"debuff"},"arcanebeam":{"name":"Arcane Beam","sprite":1186,"mp":14,"desc":"Pure arcane (80-120) ignores DEF.","type":"magic"},"meteorrain":{"name":"Meteor Rain","sprite":1212,"mp":30,"desc":"Cataclysm (300-500) + Burn.","type":"magic"},"manacollapse":{"name":"Mana Collapse","sprite":1196,"mp":26,"desc":"AoE arcane blast (200-280).","type":"magic"},"timefreeze":{"name":"Time Freeze","sprite":1160,"mp":22,"desc":"Freeze enemy 2 rounds.","type":"debuff"},"agedecay":{"name":"Age Decay","sprite":1167,"mp":20,"desc":"Decay (150-250 over time).","type":"magic"},"souldrain":{"name":"Soul Drain","sprite":1184,"mp":10,"desc":"Drain (60-90), heal 60%.","type":"magic"},"curse":{"name":"Curse","sprite":1166,"mp":9,"desc":"Weaken & expose enemy.","type":"debuff"},"bloodexpl":{"name":"Blood Explosion","sprite":1218,"mp":30,"desc":"Detonate blood (250-400).","type":"magic"},"lifetheft":{"name":"Life Theft","sprite":1184,"mp":24,"desc":"Steal 50% HP as damage.","type":"magic"},"voidrift":{"name":"Void Rift","sprite":1216,"mp":30,"desc":"Tear reality (300-450).","type":"magic"},"darkspawn":{"name":"Dark Spawn","sprite":1164,"mp":24,"desc":"Summon demons (3×80-120).","type":"magic"},"slash":{"name":"Heavy Slash","sprite":1450,"mp":6,"desc":"Heavy blow (40-60).","type":"attack"},"guardstance":{"name":"Guard Stance","sprite":1140,"mp":6,"desc":"Shield absorbing 60.","type":"buff"},"earthslam":{"name":"Earth Slam","sprite":1205,"mp":28,"desc":"Quake (250-400) + Vulnerable.","type":"attack"},"rageburst":{"name":"Rage Burst","sprite":1217,"mp":30,"desc":"Berserk (300-450), heal 40%.","type":"attack"},"divinestrike":{"name":"Divine Strike","sprite":1204,"mp":26,"desc":"Holy smite (230-340).","type":"magic"},"fortress":{"name":"Fortress Shield","sprite":1141,"mp":24,"desc":"+50% defense & 120 shield.","type":"buff"},"warcry2":{"name":"War Cry","sprite":1152,"mp":14,"desc":"+35% party damage.","type":"buff"},"cleave2":{"name":"Cleave","sprite":1452,"mp":8,"desc":"Sweeping cut (50-80).","type":"attack"},"stab":{"name":"Stab","sprite":1460,"mp":5,"desc":"Quick stab (35-55).","type":"attack"},"shadowstrike":{"name":"Shadow Strike","sprite":1188,"mp":9,"desc":"Strike from shadow (60-90).","type":"attack"},"backstab2":{"name":"Backstab","sprite":1189,"mp":24,"desc":"Lethal backstab (300-500).","type":"attack"},"shadowclones":{"name":"Shadow Clones","sprite":1180,"mp":22,"desc":"Clones strike (4×70-110).","type":"attack"},"toxiccloud":{"name":"Toxic Cloud","sprite":1226,"mp":24,"desc":"Poison cloud (250-300 over time).","type":"magic"},"infection":{"name":"Infection Spread","sprite":1224,"mp":20,"desc":"Spread plague + weaken.","type":"attack"},"poisonstab":{"name":"Poison Stab","sprite":1462,"mp":8,"desc":"Venom strike (40-60) + Poison.","type":"attack"},"palm":{"name":"Palm Strike","sprite":1136,"mp":6,"desc":"Focused palm (40-65).","type":"attack"},"dragonfist":{"name":"Dragon Fist","sprite":1232,"mp":30,"desc":"Dragon strike (350-500).","type":"attack"},"astralpunch":{"name":"Astral Punch","sprite":1234,"mp":28,"desc":"Astral blow (300-420).","type":"magic"},"chiheal":{"name":"Chi Heal","sprite":1146,"mp":16,"desc":"Channel chi to heal 80-140.","type":"heal"},"meditate":{"name":"Meditate","sprite":1147,"mp":0,"desc":"Restore 30% MP, +shield.","type":"buff"},"wrench":{"name":"Wrench Bash","sprite":1476,"mp":6,"desc":"Bonk (38-58).","type":"attack"},"rocketbarr":{"name":"Rocket Barrage","sprite":1138,"mp":28,"desc":"Rockets (3 hits, 280-400 total).","type":"magic"},"chemcat":{"name":"Chemical Catastrophe","sprite":1228,"mp":30,"desc":"Acid blast (300-450) + Poison.","type":"magic"},"turret":{"name":"Deploy Turret","sprite":1162,"mp":18,"desc":"Turret adds bonus damage 3 rounds.","type":"buff"},"bonebolt":{"name":"Bone Bolt","sprite":1164,"mp":8,"desc":"Bone shard (45-70).","type":"magic"},"undeadarmy":{"name":"Undead Army","sprite":1162,"mp":26,"desc":"Raise undead (5×40-70).","type":"magic"},"soulexpl":{"name":"Soul Explosion","sprite":1220,"mp":30,"desc":"Soul burst (320-480).","type":"magic"},"lifedrain":{"name":"Life Drain","sprite":1184,"mp":12,"desc":"Drain life (70-100).","type":"magic"},"frostbolt":{"name":"Frost Bolt","sprite":1175,"mp":8,"desc":"Frost (45-70) + chill.","type":"magic"},"frozenworld":{"name":"Frozen World","sprite":1178,"mp":30,"desc":"Absolute zero (300-450) + freeze.","type":"magic"},"sunexpl":{"name":"Sun Explosion","sprite":1212,"mp":32,"desc":"Solar nova (400-600) + Burn.","type":"magic"},"flamewave":{"name":"Flame Wave","sprite":1144,"mp":14,"desc":"Fire wave (90-130) + Burn.","type":"magic"},"chaosbolt":{"name":"Chaos Bolt","sprite":1216,"mp":20,"desc":"Random chaos (50-800!).","type":"magic"},"dragonbreath":{"name":"Dragon Breath","sprite":1144,"mp":30,"desc":"Dragonfire (450-700).","type":"magic"},"godpunch":{"name":"Godhand","sprite":1136,"mp":34,"desc":"The fist of god (600-900).","type":"attack"}};
 const ITEMS={"hpotion":{"name":"Health Potion","sprite":266,"desc":"Restore 80 HP.","kind":"consumable","rarity":"common"},"greaterhp":{"name":"Greater Potion","sprite":278,"desc":"Restore 180 HP.","kind":"consumable","rarity":"uncommon"},"superhp":{"name":"Super Potion","sprite":285,"desc":"Restore 350 HP.","kind":"consumable","rarity":"rare"},"mpotion":{"name":"Mana Potion","sprite":297,"desc":"Restore 90 MP.","kind":"consumable","rarity":"common"},"greatermp":{"name":"Greater Ether","sprite":300,"desc":"Restore 200 MP.","kind":"consumable","rarity":"uncommon"},"elixir":{"name":"Elixir","sprite":287,"desc":"Full HP + MP.","kind":"consumable","rarity":"rare"},"antidote":{"name":"Antidote","sprite":270,"desc":"Cleanse debuffs + 30 HP.","kind":"consumable","rarity":"common"},"bomb":{"name":"Fire Bomb","sprite":261,"desc":"120 fixed damage.","kind":"consumable","rarity":"uncommon"},"megabomb":{"name":"Inferno Bomb","sprite":260,"desc":"280 fixed damage.","kind":"consumable","rarity":"rare"},"phoenixdown":{"name":"Phoenix Down","sprite":262,"desc":"Revive a fallen ally at 50% HP.","kind":"consumable","rarity":"legendary"},"rustsword":{"name":"Rusty Sword","sprite":1448,"desc":"+3 STR","kind":"weapon","rarity":"common"},"shortbow":{"name":"Short Bow","sprite":1418,"desc":"+3 DEX","kind":"weapon","rarity":"common"},"oakstaff":{"name":"Oak Staff","sprite":1392,"desc":"+3 INT","kind":"weapon","rarity":"common"},"dagger":{"name":"Iron Dagger","sprite":1460,"desc":"+2 DEX +1 LUK","kind":"weapon","rarity":"common"},"steelsword":{"name":"Steel Sword","sprite":1449,"desc":"+6 STR","kind":"weapon","rarity":"uncommon"},"warbow":{"name":"War Bow","sprite":1419,"desc":"+6 DEX","kind":"weapon","rarity":"uncommon"},"battleaxe":{"name":"Battle Axe","sprite":1456,"desc":"+7 STR +2 VIT","kind":"weapon","rarity":"uncommon"},"cmace":{"name":"Heavy Mace","sprite":1476,"desc":"+5 STR +3 VIT","kind":"weapon","rarity":"uncommon"},"flamebrand":{"name":"Flamebrand","sprite":1366,"desc":"+9 STR +4 INT · Burns on hit","kind":"weapon","rarity":"rare"},"frostfang":{"name":"Frostfang","sprite":1450,"desc":"+8 STR +5 INT · May freeze","kind":"weapon","rarity":"rare"},"venomedge":{"name":"Venom Edge","sprite":1462,"desc":"+7 STR +5 DEX · Poisons on hit","kind":"weapon","rarity":"rare"},"arcanerod":{"name":"Arcane Rod","sprite":1394,"desc":"+11 INT +4 WIS","kind":"weapon","rarity":"rare"},"dragonsword":{"name":"Dragon Sword","sprite":1452,"desc":"+14 STR +5 VIT · Burns on hit","kind":"weapon","rarity":"epic"},"stormbow":{"name":"Storm Bow","sprite":1420,"desc":"+14 DEX +6 INT · +10% crit","kind":"weapon","rarity":"epic"},"voidstaff":{"name":"Void Staff","sprite":1395,"desc":"+16 INT +6 WIS · Ignores some DEF","kind":"weapon","rarity":"epic"},"excalibur":{"name":"Excalibur","sprite":1364,"desc":"+20 STR +8 VIT +5 LUK · +10% crit","kind":"weapon","rarity":"legendary"},"worldender":{"name":"World Ender","sprite":1370,"desc":"+18 STR +14 INT · Burns on hit","kind":"weapon","rarity":"legendary"},"godslayer":{"name":"Godslayer Bow","sprite":1133,"desc":"+22 DEX +10 LUK · +10% crit","kind":"weapon","rarity":"legendary"},"leather":{"name":"Leather Armor","sprite":1856,"desc":"+3 VIT","kind":"armor","rarity":"common"},"chainmail":{"name":"Chainmail","sprite":1857,"desc":"+6 VIT +1 STR","kind":"armor","rarity":"uncommon"},"platearmor":{"name":"Plate Armor","sprite":1858,"desc":"+10 VIT +2 STR","kind":"armor","rarity":"rare"},"mageRobe":{"name":"Mage Robe","sprite":1840,"desc":"+5 INT +5 WIS","kind":"armor","rarity":"uncommon"},"shadowgarb":{"name":"Shadow Garb","sprite":1841,"desc":"+8 DEX +3 LUK · 18% dodge","kind":"armor","rarity":"rare"},"dragonmail":{"name":"Dragonscale Mail","sprite":1859,"desc":"+16 VIT +4 STR · Reflects dmg","kind":"armor","rarity":"epic"},"holyplate":{"name":"Holy Plate","sprite":1860,"desc":"+22 VIT +8 WIS · Regen HP/turn","kind":"armor","rarity":"legendary"},"ringpow":{"name":"Ring of Power","sprite":230,"desc":"+4 STR +4 INT","kind":"trinket","rarity":"uncommon"},"amuletvit":{"name":"Amulet of Vigor","sprite":232,"desc":"+6 VIT","kind":"trinket","rarity":"uncommon"},"bootspd":{"name":"Swift Boots","sprite":1888,"desc":"+8 DEX · +10% crit","kind":"trinket","rarity":"rare"},"soulorb":{"name":"Soul Orb","sprite":378,"desc":"+6 WIS · Regen HP/turn","kind":"trinket","rarity":"rare"},"luckcharm":{"name":"Lucky Charm","sprite":225,"desc":"+12 LUK","kind":"trinket","rarity":"epic"},"godheart":{"name":"Heart of the Gods","sprite":258,"desc":"+10 VIT +6 STR +6 INT · Regen HP/turn","kind":"trinket","rarity":"legendary"}};
-const CLASSES={"ranger":{"name":"Ranger","sprite":1936,"desc":"","stats":{"DEX":12,"STR":5,"LUK":3}},"mage":{"name":"Mage","sprite":1952,"desc":"","stats":{"INT":12,"WIS":10}},"warrior":{"name":"Warrior","sprite":1920,"desc":"","stats":{"STR":15,"VIT":10}},"assassin":{"name":"Assassin","sprite":1928,"desc":"","stats":{"DEX":15,"LUK":10}},"monk":{"name":"Monk","sprite":1944,"desc":"","stats":{"STR":10,"DEX":10,"WIS":10}},"engineer":{"name":"Engineer","sprite":1960,"desc":"","stats":{"INT":15,"DEX":10}},"necromancer":{"name":"Necromancer","sprite":1968,"desc":"","stats":{"INT":12,"VIT":10}},"elementalist":{"name":"Elementalist","sprite":1976,"desc":"","stats":{"INT":15,"DEX":5,"WIS":5}}};
+const CLASSES={"ranger":{"name":"Ranger","sprite":1955,"desc":"","stats":{"DEX":12,"STR":5,"LUK":3}},"mage":{"name":"Mage","sprite":1957,"desc":"","stats":{"INT":12,"WIS":10}},"warrior":{"name":"Warrior","sprite":1908,"desc":"","stats":{"STR":15,"VIT":10}},"assassin":{"name":"Assassin","sprite":1953,"desc":"","stats":{"DEX":15,"LUK":10}},"monk":{"name":"Monk","sprite":1965,"desc":"","stats":{"STR":10,"DEX":10,"WIS":10}},"engineer":{"name":"Engineer","sprite":1910,"desc":"","stats":{"INT":15,"DEX":10}},"necromancer":{"name":"Necromancer","sprite":1952,"desc":"","stats":{"INT":12,"VIT":10}},"elementalist":{"name":"Elementalist","sprite":1961,"desc":"","stats":{"INT":15,"DEX":5,"WIS":5}}};
 const STATUS_LABEL={poison:'🟢 Psn',burn:'🔥 Brn',bleed:'🩸 Bld',stun:'💫 Stun',freeze:'🧊 Frz',weaken:'⬇ Weak',vulnerable:'🎯 Vuln',shield:'🛡 Shld',regen:'💚 Regn'};
 
 // ===== state =====
@@ -332,8 +346,13 @@ function handle(m){
     if(last&&m.world.enemy&&last.world.enemy&&m.world.enemy.name===last.world.enemy.name){
       if(m.world.enemy.hp<last.world.enemy.hp) animateEnemyHurt(last.world.enemy.hp-m.world.enemy.hp);
     }
+    // detect party members who lost HP since last snapshot
+    let hurt=[];
+    if(last&&last.players){ const prev={}; last.players.forEach(p=>prev[p.id]=p.hp);
+      m.players.forEach(p=>{ if(prev[p.id]!==undefined && p.hp<prev[p.id]) hurt.push({id:p.id,dmg:prev[p.id]-p.hp}); }); }
     if(prevPhase==='equip'&&m.world.phase!=='equip'){editSkills=null;editEq=null;}
     prevPhase=m.world.phase; last=m; render(m);
+    hurt.forEach(h=>animatePlayerHurt(h.id,h.dmg));
   }
 }
 function toast(msg){const t=document.createElement('div');t.className='toast';t.textContent=msg;document.getElementById('toast').appendChild(t);setTimeout(()=>t.remove(),2200);}
@@ -353,7 +372,25 @@ document.getElementById('fileinput').addEventListener('change',function(){
   rd.onload=e=>{const img=new Image();img.onload=()=>{const cv=document.createElement('canvas');const s=200;cv.width=s;cv.height=s;const ctx=cv.getContext('2d');const mn=Math.min(img.width,img.height);ctx.drawImage(img,(img.width-mn)/2,(img.height-mn)/2,mn,mn,0,0,s,s);myPortrait=cv.toDataURL('image/jpeg',0.7);document.getElementById('ppreview').src=myPortrait;document.getElementById('pwrap').style.display='block';document.getElementById('upload').style.display='none';document.getElementById('cstep').style.display='block';checkJoin();};img.src=e.target.result;};
   rd.readAsDataURL(f);
 });
-function joinGame(){const name=document.getElementById('hname').value.trim();if(!name||!selCls||!myPortrait)return;send({type:'join',name,cls:selCls,portrait:myPortrait});document.getElementById('join').classList.remove('on');document.getElementById('app').style.display='flex';}
+const SECRET_CLASSES={chaoswalker:{name:'Chaos Walker',sprite:1958,desc:'Reality bends to chaos — 50-800 damage.',stats:{INT:25,LUK:25,DEX:15}},voiddragon:{name:'Void Dragon Rider',sprite:1982,desc:'Rides the void — Dragon Breath & Godhand.',stats:{STR:25,INT:25,VIT:15}}};
+function joinGame(){const name=document.getElementById('hname').value.trim();if(!name||!selCls||!myPortrait)return;
+  // 0.5% chance to discover a SECRET class instead
+  let cls=selCls;
+  if(Math.random()<0.005){ const ids=Object.keys(SECRET_CLASSES); cls=ids[Math.floor(Math.random()*ids.length)]; return secretReveal(cls,name); }
+  send({type:'join',name,cls,portrait:myPortrait});document.getElementById('join').classList.remove('on');document.getElementById('app').style.display='flex';}
+function secretReveal(cls,name){
+  const sc=SECRET_CLASSES[cls];
+  const o=document.createElement('div');o.className='picker-overlay';o.id='secretreveal';
+  o.innerHTML=`<div class="picker-box" style="text-align:center;max-width:440px;border-color:var(--violet);box-shadow:0 0 60px -10px rgba(154,111,212,.7)">
+    <div class="picker-title" style="color:var(--violet)">✦ A Rare Fate Unfolds ✦</div>
+    <div style="margin:.6rem auto">${sprDiv(sc.sprite,'csprite2',72)}</div>
+    <div class="cn2" style="color:#caa6ff;font-size:1.3rem">${sc.name}</div>
+    <p style="font-size:.86rem;color:var(--parch-dim);margin:.7rem 0 1.1rem;line-height:1.6">You reached for one path, but destiny offered another. <strong style="color:#caa6ff">${sc.name}</strong> — a secret class (0.5% chance) — answers your call.<br><span style="font-size:.78rem">${sc.desc}</span></p>
+    <button class="btn" onclick="confirmSecret('${cls}','${esc(name).replace(/'/g,"\\'")}')">Embrace This Destiny</button>
+  </div>`;
+  document.body.appendChild(o);
+}
+function confirmSecret(cls,name){const o=document.getElementById('secretreveal');if(o)o.remove();send({type:'join',name,cls,portrait:myPortrait});document.getElementById('join').classList.remove('on');document.getElementById('app').style.display='flex';}
 
 // ===== render =====
 function me(){return last?last.players.find(p=>p.id===sessionId):null;}
@@ -380,7 +417,7 @@ function renderSidebar(s){
     const isMe=p.id===sessionId,isTurn=p.id===turnId;
     const pic=p.portrait?`<div class="pmpic"><img src="${p.portrait}">${isMe?'<span class="you-tag">YOU</span>':''}</div>`:`<div class="pmpic">${sprDiv(p.sprite,'csprite',40)}${isMe?'<span class="you-tag">YOU</span>':''}</div>`;
     const xpW=p.maxHp; // not used
-    return `<div class="pm ${p.alive?'':'dead'} ${isTurn?'turn':''}">${pic}<div class="pminfo"><div class="pmname">${esc(p.name)}</div><div class="pmcls">${esc(p.className)} · L${p.level}</div>
+    return `<div class="pm ${p.alive?'':'dead'} ${isTurn?'turn':''}" data-pid="${p.id}">${pic}<div class="pminfo"><div class="pmname">${esc(p.name)}</div><div class="pmcls">${esc(p.className)} · L${p.level}</div>
       <div class="pmbars"><div class="bar"><div class="barf hpf" style="width:${Math.round(p.hp/p.maxHp*100)}%"></div><span class="barlabel">${p.hp}/${p.maxHp}</span></div>
       <div class="bar"><div class="barf mpf" style="width:${Math.round(p.mp/Math.max(1,p.maxMp)*100)}%"></div><span class="barlabel">${p.mp}/${p.maxMp}</span></div></div>
       ${statusChips(p.status)}</div></div>`;
@@ -475,9 +512,31 @@ function renderCombat(world,m,players){
   h+=`<div class="party-status"><div class="ps-title">Party</div><div class="ps-grid">`+players.map(p=>`<div class="ps-chip ${p.alive?'':'dead'}">${p.portrait?`<img src="${p.portrait}" style="width:20px;height:20px;border-radius:3px">`:sprDiv(p.sprite,'csprite',20)} ${esc(p.name)}: ${p.hp}/${p.maxHp}</div>`).join('')+`</div></div>`;
   return h;
 }
-function useSkill(id){const m=me();if(!m)return;let targetId=null;const sk=SKILLS[id];
-  if(sk&&sk.type==='heal'){const allies=last.players.filter(p=>p.alive).sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp));targetId=allies.length?allies[0].id:m.id;}
-  animatePlayerAct(sk);send({type:'action',kind:'skill',payload:{skillId:id,targetId}});}
+function useSkill(id){const m=me();if(!m)return;const sk=SKILLS[id];
+  if(sk&&sk.type==='heal'){
+    const allies=last.players.filter(p=>p.alive);
+    if(allies.length>1){ return openHealPicker(id,allies); }   // let the player choose
+    const t=allies[0]||m; return fireSkill(id,t.id);
+  }
+  fireSkill(id,m.id);
+}
+function fireSkill(id,targetId){const sk=SKILLS[id];animatePlayerAct(sk);send({type:'action',kind:'skill',payload:{skillId:id,targetId}});closeHealPicker();}
+function openHealPicker(id,allies){
+  const lowest=[...allies].sort((a,b)=>(a.hp/a.maxHp)-(b.hp/b.maxHp))[0];
+  const cards=allies.map(p=>{const pct=Math.round(p.hp/p.maxHp*100);const isLow=p.id===lowest.id;
+    return `<div class="healtgt ${isLow?'low':''}" onclick="fireSkill('${id}','${p.id}')">
+      ${p.portrait?`<img src="${p.portrait}">`:sprDiv(p.sprite,'csprite',44)}
+      <div class="htname">${esc(p.name)}${p.id===sessionId?' (you)':''}</div>
+      <div class="bar"><div class="barf hpf" style="width:${pct}%"></div><span class="barlabel">${p.hp}/${p.maxHp}</span></div>
+      ${isLow?'<div class="htlow">most hurt</div>':''}</div>`;}).join('');
+  const o=document.createElement('div');o.id='healpicker';o.className='picker-overlay';
+  o.innerHTML=`<div class="picker-box"><div class="picker-title">${SKILLS[id].name} — choose who to heal</div>
+    <div class="healtgts">${cards}</div>
+    <button class="btn btn-sm" onclick="closeHealPicker()">Cancel</button></div>`;
+  o.addEventListener('click',e=>{if(e.target===o)closeHealPicker();});
+  document.body.appendChild(o);
+}
+function closeHealPicker(){const o=document.getElementById('healpicker');if(o)o.remove();}
 function useItem(id){send({type:'action',kind:'item',payload:{itemId:id}});}
 
 function renderLoot(world,m){
@@ -499,6 +558,11 @@ function renderEnd(players,win){
 }
 
 // ===== animations =====
+function animatePlayerHurt(pid,dmg){
+  const el=document.querySelector(`.pm[data-pid="${pid}"]`); if(!el)return;
+  el.classList.remove('hurt');void el.offsetWidth;el.classList.add('hurt');
+  const pic=el.querySelector('.pmpic'); if(pic){const r=pic.getBoundingClientRect();floater(r.left+r.width/2,r.top+4,'-'+dmg,'dmg');}
+}
 function animateEnemyHurt(dmg){const sp=document.getElementById('enemySprite');const ar=document.getElementById('arena');
   if(sp){sp.classList.remove('hurt');void sp.offsetWidth;sp.classList.add('hurt');}
   if(ar){ar.classList.remove('shake');void ar.offsetWidth;ar.classList.add('shake');

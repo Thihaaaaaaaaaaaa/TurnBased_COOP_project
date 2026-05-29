@@ -1,16 +1,18 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useWebSocket } from './hooks/useWebSocket';
-import { ROLE_INFO, getRoleLabel, KILLER_VARIANTS } from './utils/roles';
+import { ROLE_INFO, getRoleLabel, KILLER_VARIANTS, CATEGORY_ALL } from './utils/roles';
+import { sfx, setSoundEnabled, isSoundEnabled } from './utils/sound';
+import { SaloonScene } from './components/SaloonScene';
 import './App.css';
 
-// ─── Dust Particle Component ───────────────────────────────────────────────────
-function DustParticles({ count = 15 }) {
+// ─── Atmosphere: Dust ──────────────────────────────────────────────────────────
+function DustParticles({ count = 25 }) {
   const particles = Array.from({ length: count }, (_, i) => ({
     id: i,
     left: `${Math.random() * 100}%`,
-    delay: `${Math.random() * 8}s`,
-    duration: `${6 + Math.random() * 8}s`,
-    size: `${2 + Math.random() * 4}px`,
+    delay: `${Math.random() * 10}s`,
+    duration: `${8 + Math.random() * 10}s`,
+    size: `${2 + Math.random() * 5}px`,
     opacity: 0.3 + Math.random() * 0.5,
   }));
   return (
@@ -23,6 +25,67 @@ function DustParticles({ count = 15 }) {
       ))}
     </div>
   );
+}
+
+// ─── Atmosphere: Smoke clouds ──────────────────────────────────────────────────
+function SmokeAtmosphere({ count = 4 }) {
+  const clouds = Array.from({ length: count }, (_, i) => ({
+    id: i,
+    left: `${10 + Math.random() * 80}%`,
+    delay: `${Math.random() * 12}s`,
+    duration: `${14 + Math.random() * 8}s`,
+  }));
+  return (
+    <div className="smoke-container">
+      {clouds.map(c => (
+        <div key={c.id} className="smoke-cloud" style={{
+          left: c.left, animationDelay: c.delay, animationDuration: c.duration
+        }} />
+      ))}
+    </div>
+  );
+}
+
+// ─── Atmosphere: Ravens flying ─────────────────────────────────────────────────
+function Ravens({ count = 2 }) {
+  const ravens = Array.from({ length: count }, (_, i) => ({
+    id: i,
+    top: `${10 + Math.random() * 30}%`,
+    delay: `${Math.random() * 20}s`,
+    duration: `${15 + Math.random() * 10}s`,
+  }));
+  return (
+    <div className="raven-container">
+      {ravens.map(r => (
+        <div key={r.id} className="raven" style={{
+          top: r.top, animationDelay: r.delay, animationDuration: r.duration
+        }}>🦅</div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Atmosphere: Tumbleweed ────────────────────────────────────────────────────
+function Tumbleweed({ count = 1 }) {
+  const weeds = Array.from({ length: count }, (_, i) => ({
+    id: i,
+    delay: `${5 + Math.random() * 25}s`,
+    duration: `${10 + Math.random() * 6}s`,
+  }));
+  return (
+    <div className="raven-container">
+      {weeds.map(w => (
+        <div key={w.id} className="tumbleweed" style={{
+          animationDelay: w.delay, animationDuration: w.duration
+        }}>🌾</div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Scanline CRT effect ───────────────────────────────────────────────────────
+function Scanline() {
+  return <div className="scanline-overlay" />;
 }
 
 // ─── Wanted Poster Player Card ─────────────────────────────────────────────────
@@ -89,6 +152,227 @@ function TimerRing({ duration, onComplete, label }) {
         <text x="65" y="60" className="timer-text" fill={urgentColor}>{Math.ceil(timeLeft)}</text>
         <text x="65" y="78" className="timer-label-text">{label}</text>
       </svg>
+    </div>
+  );
+}
+
+// ─── Big Center Clock (syncs to server phaseEndsAt) ────────────────────────────
+function BigClock({ endsAt, totalMs, label }) {
+  const [now, setNow] = useState(Date.now());
+  const lastTickRef = useRef(null);
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(interval);
+  }, []);
+
+  if (!endsAt) return null;
+  const remaining = Math.max(0, endsAt - now);
+  const secs = Math.ceil(remaining / 1000);
+
+  // Tick sound on each whole second when <= 5s remain
+  if (secs <= 5 && secs >= 1 && lastTickRef.current !== secs) {
+    lastTickRef.current = secs;
+    sfx.tick();
+  }
+  if (secs > 5) lastTickRef.current = null;
+
+  const total = totalMs || 30000;
+  const progress = Math.max(0, Math.min(1, remaining / total));
+
+  const radius = 90;
+  const circumference = 2 * Math.PI * radius;
+  const dashOffset = circumference * (1 - progress);
+  const urgent = secs <= 5;
+  const warning = secs <= 10 && secs > 5;
+  const color = urgent ? '#e63946' : warning ? '#e67e22' : '#f4d03f';
+
+  return (
+    <div className={`big-clock ${urgent ? 'urgent' : ''}`}>
+      <svg width="220" height="220" viewBox="0 0 220 220" className="big-clock-svg">
+        {/* Outer decorative ring */}
+        <circle cx="110" cy="110" r="104" fill="none" stroke="rgba(201,168,76,0.2)" strokeWidth="2" strokeDasharray="4 6" />
+        {/* Tick marks */}
+        {Array.from({ length: 12 }).map((_, i) => {
+          const angle = (i * 30 - 90) * Math.PI / 180;
+          const x1 = 110 + Math.cos(angle) * 98;
+          const y1 = 110 + Math.sin(angle) * 98;
+          const x2 = 110 + Math.cos(angle) * 88;
+          const y2 = 110 + Math.sin(angle) * 88;
+          return <line key={i} x1={x1} y1={y1} x2={x2} y2={y2} stroke="rgba(201,168,76,0.4)" strokeWidth="2" />;
+        })}
+        {/* Track */}
+        <circle cx="110" cy="110" r={radius} fill="none" stroke="rgba(15,7,0,0.6)" strokeWidth="10" />
+        {/* Progress */}
+        <circle cx="110" cy="110" r={radius} fill="none"
+          stroke={color} strokeWidth="10" strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
+          transform="rotate(-90 110 110)"
+          style={{ transition: 'stroke-dashoffset 0.2s linear, stroke 0.4s', filter: `drop-shadow(0 0 12px ${color})` }}
+        />
+        <text x="110" y="118" textAnchor="middle" className="big-clock-num"
+          fill={color} style={{ filter: `drop-shadow(0 0 10px ${color})` }}>{secs}</text>
+        <text x="110" y="150" textAnchor="middle" className="big-clock-label">{label}</text>
+      </svg>
+    </div>
+  );
+}
+
+// ─── Revolver Chamber Spinner (time-waster toy) ────────────────────────────────
+function RevolverSpinner() {
+  const [chambers, setChambers] = useState(() => {
+    const arr = [false, false, false, false, false, false];
+    arr[Math.floor(Math.random() * 6)] = true; // one live round
+    return arr;
+  });
+  const [position, setPosition] = useState(0);
+  const [spinning, setSpinning] = useState(false);
+  const [rotation, setRotation] = useState(0);
+  const [result, setResult] = useState(null); // 'click' | 'bang'
+  const [pulls, setPulls] = useState(0);
+  const [survived, setSurvived] = useState(0);
+
+  const spin = () => {
+    if (spinning) return;
+    setResult(null);
+    setSpinning(true);
+    sfx.spin();
+    const spins = 3 + Math.floor(Math.random() * 4);
+    const landingPos = Math.floor(Math.random() * 6);
+    const totalRot = rotation + spins * 360 + landingPos * 60;
+    setRotation(totalRot);
+    setPosition(landingPos);
+    setTimeout(() => {
+      setSpinning(false);
+    }, 1200);
+  };
+
+  const pull = () => {
+    if (spinning) return;
+    const isLive = chambers[position];
+    setPulls(p => p + 1);
+    if (isLive) {
+      setResult('bang');
+      sfx.gunshot();
+      // reset with new live round after a moment
+      setTimeout(() => {
+        const arr = [false, false, false, false, false, false];
+        arr[Math.floor(Math.random() * 6)] = true;
+        setChambers(arr);
+        setSurvived(0);
+        setResult(null);
+      }, 1500);
+    } else {
+      setResult('click');
+      sfx.click();
+      setSurvived(s => s + 1);
+      // advance chamber
+      setPosition(p => (p + 1) % 6);
+      setRotation(r => r + 60);
+      setTimeout(() => setResult(null), 800);
+    }
+  };
+
+  return (
+    <div className="revolver-toy">
+      <div className="revolver-toy-title">🎲 Russian Roulette — pass the time</div>
+      <div className={`revolver-chamber-wrap ${result === 'bang' ? 'bang' : ''}`}>
+        <div className="revolver-cylinder" style={{ transform: `rotate(${rotation}deg)`, transition: spinning ? 'transform 1.2s cubic-bezier(0.3,0.9,0.4,1)' : 'transform 0.3s ease-out' }}>
+          {chambers.map((live, i) => {
+            const angle = i * 60;
+            return (
+              <div key={i} className="chamber-hole" style={{ transform: `rotate(${angle}deg) translateY(-58px)` }}>
+                <div className={`chamber-dot ${live ? 'live' : ''}`} />
+              </div>
+            );
+          })}
+          <div className="cylinder-center">🤠</div>
+        </div>
+        <div className="revolver-hammer" />
+        {result === 'click' && <div className="revolver-result click">CLICK</div>}
+        {result === 'bang' && <div className="revolver-result bang">💥 BANG!</div>}
+      </div>
+      <div className="revolver-stats">
+        <span>Survived: <strong>{survived}</strong></span>
+        <span>Pulls: <strong>{pulls}</strong></span>
+      </div>
+      <div className="revolver-buttons">
+        <button className="revolver-btn spin" onClick={spin} disabled={spinning}>🔄 Spin</button>
+        <button className="revolver-btn pull" onClick={pull} disabled={spinning || result === 'bang'}>🔫 Pull Trigger</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Role Selection Screen ─────────────────────────────────────────────────────
+function RoleSelectScreen({ category, available, selected, pending, waitingCount, onSelect, players, myId }) {
+  const catLabels = {
+    killer: { title: 'CHOOSE YOUR OUTLAW', emoji: '🔫', color: '#c0392b', sub: 'How will you deal death?' },
+    doctor: { title: 'CHOOSE YOUR HEALER', emoji: '💉', color: '#2a7a4f', sub: 'How will you save lives?' },
+    detective: { title: 'CHOOSE YOUR LAWMAN', emoji: '🔍', color: '#7a6a2a', sub: 'How will you find the truth?' },
+  };
+  const info = catLabels[category] || { title: 'CHOOSE YOUR ROLE', emoji: '🎭', color: '#c9a84c', sub: '' };
+
+  // Civilian or non-special: just wait
+  if (!category || category === 'civilian') {
+    return (
+      <div className="roleselect-screen">
+        <DustParticles count={20} />
+        <SmokeAtmosphere count={2} />
+        <div className="roleselect-content animate-burn">
+          <div className="roleselect-civilian">
+            <div className="civ-big-emoji">🤠</div>
+            <div className="roleselect-title">YOU RIDE AS A CIVILIAN</div>
+            <div className="roleselect-sub">No special powers — just your wits and your vote.</div>
+            <div className="roleselect-waiting">
+              <span className="waiting-spinner">⭐</span>
+              Waiting on {waitingCount} gunslinger{waitingCount !== 1 ? 's' : ''} to choose...
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="roleselect-screen" style={{ '--cat-color': info.color }}>
+      <DustParticles count={25} />
+      <SmokeAtmosphere count={3} />
+      <Scanline />
+      <div className="roleselect-content animate-burn">
+        <div className="roleselect-emoji" style={{ color: info.color }}>{info.emoji}</div>
+        <div className="roleselect-title" style={{ color: info.color }}>{info.title}</div>
+        <div className="roleselect-sub">{info.sub}</div>
+
+        {selected ? (
+          <div className="roleselect-locked animate-stamp">
+            <div className="locked-check">✓</div>
+            <div className="locked-role">{ROLE_INFO[selected]?.emoji} {ROLE_INFO[selected]?.label}</div>
+            <div className="locked-msg">Locked in! Waiting on {waitingCount} other{waitingCount !== 1 ? 's' : ''}...</div>
+          </div>
+        ) : (
+          <div className="roleselect-cards">
+            {CATEGORY_ALL[category].map(variant => {
+              const rInfo = ROLE_INFO[variant];
+              const isAvailable = available.includes(variant);
+              const rgb = hexToRgb(rInfo.color);
+              return (
+                <button key={variant}
+                  className={`roleselect-card ${!isAvailable ? 'taken' : ''}`}
+                  style={{ '--rc': rInfo.color, '--rc-rgb': rgb }}
+                  onClick={() => isAvailable && onSelect(variant)}
+                  disabled={!isAvailable}>
+                  <div className="rsc-emoji">{rInfo.emoji}</div>
+                  <div className="rsc-name">{rInfo.label}</div>
+                  <div className="rsc-desc">{rInfo.description}</div>
+                  <div className="rsc-flavor">"{rInfo.flavor}"</div>
+                  {!isAvailable && <div className="rsc-taken-stamp">TAKEN</div>}
+                </button>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -185,6 +469,56 @@ function GameLog({ entries }) {
   );
 }
 
+// ─── Chat Panel ────────────────────────────────────────────────────────────────
+function ChatPanel({ chatLog, canGhostChat, canSend, onSend, phase }) {
+  const [text, setText] = useState('');
+  const scrollRef = useRef(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [chatLog]);
+
+  const submit = () => {
+    const t = text.trim();
+    if (!t) return;
+    onSend(t);
+    setText('');
+  };
+
+  const nightMuted = canSend === false && !canGhostChat;
+
+  return (
+    <div className="chat-panel">
+      <div className="chat-header">
+        {canGhostChat ? '👻 GHOST CHATTER' : '💬 TOWN TALK'}
+      </div>
+      <div className="chat-messages" ref={scrollRef}>
+        {(chatLog || []).length === 0 && (
+          <div className="chat-empty">{canGhostChat ? 'The dead are silent... for now.' : 'No one\'s spoken yet.'}</div>
+        )}
+        {(chatLog || []).map((c, i) => (
+          <div key={i} className={`chat-msg ${c.channel === 'ghost' ? 'ghost' : ''}`}>
+            <span className="chat-name">{c.name}:</span>
+            <span className="chat-text">{c.msg}</span>
+          </div>
+        ))}
+      </div>
+      <div className="chat-input-row">
+        <input
+          className="chat-input"
+          type="text"
+          placeholder={nightMuted ? 'Town sleeps — hush now...' : canGhostChat ? 'Whisper from the grave...' : 'Speak yer piece...'}
+          value={text}
+          onChange={e => setText(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && submit()}
+          maxLength={200}
+          disabled={nightMuted}
+        />
+        <button className="chat-send" onClick={submit} disabled={nightMuted || !text.trim()}>▶</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Role Card (role reveal) ───────────────────────────────────────────────────
 function RoleRevealCard({ role }) {
   const info = ROLE_INFO[role] || {};
@@ -216,7 +550,7 @@ function RoleRevealCard({ role }) {
 }
 
 // ─── Night Action Panel ────────────────────────────────────────────────────────
-function NightActionPanel({ myRole, players, myId, onAction, pendingAction, cooldowns, policeTarget }) {
+function NightActionPanel({ myRole, players, myId, onAction, pendingAction, cooldowns, policeTarget, phaseEndsAt }) {
   const [selected, setSelected] = useState(null);
   const [geminiDelay, setGeminiDelay] = useState(1);
   const [forensicGuess, setForensicGuess] = useState(null);
@@ -292,9 +626,12 @@ function NightActionPanel({ myRole, players, myId, onAction, pendingAction, cool
   return (
     <div className="night-panel animate-paper">
       <div className="night-panel-header">
-        <span style={{ color: info.color }}>{info.emoji}</span>
-        <span className="rye">{info.label}'s Move</span>
-        <TimerRing duration={25000} label="ACT" onComplete={skipAction} />
+        <span style={{ color: info.color, fontSize: '1.4rem' }}>{info.emoji}</span>
+        <span className="role-name">{info.label}</span>
+      </div>
+
+      <div className="clock-center-wrap">
+        <BigClock endsAt={phaseEndsAt} totalMs={25000} label="ACT NOW" />
       </div>
 
       {myRole === 'BAY_HARBOR' && (
@@ -374,10 +711,11 @@ function NightActionPanel({ myRole, players, myId, onAction, pendingAction, cool
 
 // ─── Day Vote Panel ────────────────────────────────────────────────────────────
 function DayVotePanel({ players, myId, myRole, onVote, onSkip, onPoliceAction,
-  skipVoteCount, skipVoteRequired, votes, policeTarget, policeCooldownActive }) {
+  skipVoteCount, skipVoteRequired, votes, policeTarget, policeCooldownActive, phaseEndsAt }) {
   const [myVote, setMyVote] = useState(null);
   const [policeSelected, setPoliceSelected] = useState(null);
   const [skipped, setSkipped] = useState(false);
+  const [showToy, setShowToy] = useState(false);
   const alivePlayers = players.filter(p => p.alive && p.id !== myId);
   const skipPct = Math.round((skipVoteCount / Math.max(1, players.filter(p => p.alive).length)) * 100);
 
@@ -399,21 +737,25 @@ function DayVotePanel({ players, myId, myRole, onVote, onSkip, onPoliceAction,
 
   return (
     <div className="day-panel animate-paper">
-      <div className="day-panel-header rye">☀️ Town Square — Speak Your Piece</div>
+      <div className="day-panel-header">☀ TOWN SQUARE — SPEAK YOUR PIECE</div>
+
+      <div className="clock-center-wrap">
+        <BigClock endsAt={phaseEndsAt} totalMs={30000} label="DISCUSS" />
+      </div>
 
       <div className="skip-progress-wrap">
-        <div className="skip-bar-label">SKIP VOTES: {skipVoteCount}/{skipVoteRequired}</div>
+        <div className="skip-bar-label">SKIP VOTES — <span className="num">{skipVoteCount}/{skipVoteRequired}</span></div>
         <div className="skip-bar-track">
           <div className="skip-bar-fill" style={{ width: `${Math.min(100, skipPct)}%` }} />
           <div className="skip-bar-threshold" style={{ left: '50%' }} />
         </div>
         {!skipped && (
-          <button className="skip-day-btn" onClick={handleSkip}>Skip to Night ⏭️</button>
+          <button className="skip-day-btn" onClick={handleSkip}>⏭ SKIP TO NIGHT</button>
         )}
       </div>
 
       <div className="vote-section">
-        <div className="vote-label">Cast your vote — who's the outlaw?</div>
+        <div className="vote-label">WHO'S THE OUTLAW?</div>
         <div className="player-vote-grid">
           {alivePlayers.map(p => (
             <button key={p.id}
@@ -427,9 +769,16 @@ function DayVotePanel({ players, myId, myRole, onVote, onSkip, onPoliceAction,
         </div>
       </div>
 
+      <div className="toy-toggle-wrap">
+        <button className="toy-toggle" onClick={() => setShowToy(s => !s)}>
+          {showToy ? '✕ Hide the Revolver' : '🔫 Got time to kill? Spin the chamber'}
+        </button>
+      </div>
+      {showToy && <RevolverSpinner />}
+
       {myRole === 'POLICE' && !policeCooldownActive && (
         <div className="police-day-action">
-          <div className="police-label">🛡️ Designate tonight's protection:</div>
+          <div className="police-label">🛡️ DESIGNATE TONIGHT'S PROTECTION</div>
           <div className="player-vote-grid">
             {alivePlayers.map(p => (
               <button key={p.id}
@@ -450,7 +799,7 @@ function DayVotePanel({ players, myId, myRole, onVote, onSkip, onPoliceAction,
 }
 
 // ─── Lobby Screen ──────────────────────────────────────────────────────────────
-function LobbyScreen({ players, myId, isHost, config, onReady, onSetConfig, onStart, error }) {
+function LobbyScreen({ players, myId, isHost, config, onReady, onSetConfig, onStart, error, roomCode }) {
   const [killers, setKillers] = useState(config.killers || 1);
   const [doctors, setDoctors] = useState(config.doctors || 1);
   const [detectives, setDetectives] = useState(config.detectives || 1);
@@ -463,43 +812,67 @@ function LobbyScreen({ players, myId, isHost, config, onReady, onSetConfig, onSt
 
   return (
     <div className="lobby-screen">
-      <DustParticles count={20} />
+      <DustParticles count={25} />
+      <SmokeAtmosphere count={2} />
+      <Ravens count={1} />
+      <Tumbleweed count={1} />
+      <Scanline />
 
-      <div className="lobby-header animate-burn">
+      <div className="lobby-header">
         <div className="sheriff-badge-top">⭐</div>
-        <h1 className="game-title rye flicker">DEADWOOD</h1>
-        <div className="game-subtitle playfair">— The Reckoning —</div>
+        <h1 className="game-title animate-title">DEADWOOD</h1>
+        <div className="title-revolvers">
+          <span>🔫</span>
+          <span style={{ color: 'var(--gold)' }}>✦</span>
+          <span>🔫</span>
+        </div>
+        <div className="entry-subtitle">— The Reckoning —</div>
         <div className="lobby-divider">✦ ✦ ✦</div>
+        {roomCode && (
+          <div className="lobby-room-code">
+            <span className="label">SALOON CODE — share it</span>
+            {roomCode}
+          </div>
+        )}
       </div>
 
       <div className="lobby-content">
         {/* Player Roster */}
-        <div className="lobby-section">
-          <h2 className="section-title rye">🤠 The Posse ({players.length}/10)</h2>
+        <div className="lobby-section animate-paper">
+          <h2 className="section-title">
+            <span>🤠</span>
+            <span>The Posse — {players.length}/10</span>
+          </h2>
           <div className="player-roster">
-            {players.map(p => (
-              <div key={p.id} className={`roster-entry ${p.id === myId ? 'is-me' : ''}`}>
+            {players.map((p, i) => (
+              <div key={p.id} className={`roster-entry ${p.id === myId ? 'is-me' : ''}`}
+                style={{ animationDelay: `${i * 0.08}s` }}>
                 <div className="roster-left">
-                  <span className="roster-icon">{p.isHost ? '🌟' : '👤'}</span>
+                  <span className="roster-icon">{p.isHost ? '⭐' : '🤠'}</span>
                   <span className="roster-name">{p.name}</span>
                   {p.isHost && <span className="host-tag">MARSHAL</span>}
-                  {p.id === myId && <span className="me-tag">YOU</span>}
+                  {p.id === myId && !p.isHost && <span className="me-tag">YOU</span>}
                 </div>
                 <div className={`ready-badge ${p.ready ? 'ready' : 'not-ready'}`}>
-                  {p.isHost ? '⭐' : p.ready ? '✓ READY' : '◌ WAITING'}
+                  {p.isHost ? '⭐ HOST' : p.ready ? '✓ READY' : '◌ WAITING'}
                 </div>
               </div>
             ))}
             {players.length < 4 && (
-              <div className="waiting-msg">Waiting for {4 - players.length} more rider{4 - players.length !== 1 ? 's' : ''}...</div>
+              <div className="waiting-msg">
+                ◌ Waiting for {4 - players.length} more rider{4 - players.length !== 1 ? 's' : ''} to join the posse...
+              </div>
             )}
           </div>
         </div>
 
         {/* Config (host only) */}
         {isHost && (
-          <div className="lobby-section">
-            <h2 className="section-title rye">⚙️ Town Setup</h2>
+          <div className="lobby-section animate-paper" style={{ animationDelay: '0.2s' }}>
+            <h2 className="section-title">
+              <span>⚙️</span>
+              <span>Town Setup</span>
+            </h2>
             <div className="config-grid">
               {[
                 { label: '🔫 Outlaws', val: killers, set: v => updateConfig(v, doctors, detectives) },
@@ -516,32 +889,43 @@ function LobbyScreen({ players, myId, isHost, config, onReady, onSetConfig, onSt
                 </div>
               ))}
             </div>
-            <div className="config-note">Min 1, Max 2 of each. Remaining players = civilians.</div>
+            <div className="config-note">⚖ Min 1, Max 2 of each. Remaining players ride as civilians.</div>
           </div>
         )}
         {!isHost && (
-          <div className="lobby-section">
+          <div className="lobby-section animate-paper" style={{ animationDelay: '0.2s' }}>
+            <h2 className="section-title">
+              <span>⚙️</span>
+              <span>Town Setup</span>
+            </h2>
             <div className="config-display">
-              <div>🔫 Outlaws: {config.killers}</div>
-              <div>💉 Docs: {config.doctors}</div>
-              <div>🔍 Lawmen: {config.detectives}</div>
+              <div>🔫 Outlaws: <strong>{config.killers}</strong></div>
+              <div>💉 Docs: <strong>{config.doctors}</strong></div>
+              <div>🔍 Lawmen: <strong>{config.detectives}</strong></div>
             </div>
           </div>
         )}
 
         {/* Role Guide */}
-        <div className="lobby-section role-guide">
-          <h2 className="section-title rye">📜 The Roles</h2>
+        <div className="lobby-section animate-paper" style={{ animationDelay: '0.4s' }}>
+          <h2 className="section-title">
+            <span>📜</span>
+            <span>The Roles of Deadwood</span>
+          </h2>
           <div className="role-guide-grid">
-            {Object.entries(ROLE_INFO).map(([key, info]) => (
-              <div key={key} className="role-guide-item" style={{ '--rc': info.color }}>
-                <span className="rg-emoji">{info.emoji}</span>
-                <div className="rg-info">
-                  <div className="rg-name">{info.label}</div>
-                  <div className="rg-desc">{info.description}</div>
+            {Object.entries(ROLE_INFO).map(([key, info]) => {
+              const rgb = hexToRgb(info.color);
+              return (
+                <div key={key} className="role-guide-item"
+                  style={{ '--rc': info.color, '--rc-rgb': rgb }}>
+                  <span className="rg-emoji">{info.emoji}</span>
+                  <div className="rg-info">
+                    <div className="rg-name">{info.label}</div>
+                    <div className="rg-desc">{info.description}</div>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -550,13 +934,13 @@ function LobbyScreen({ players, myId, isHost, config, onReady, onSetConfig, onSt
         <div className="lobby-actions">
           {!isHost && (
             <button className={`ready-btn ${me?.ready ? 'is-ready' : ''}`} onClick={onReady}>
-              {me?.ready ? '✓ READY' : 'READY UP'}
+              {me?.ready ? '✓ READY UP' : '◌ READY UP'}
             </button>
           )}
           {isHost && (
             <button className="start-btn" onClick={onStart}
               disabled={players.length < 4}>
-              <span className="start-btn-text rye">START THE RECKONING</span>
+              {players.length < 4 ? `⏳ NEED ${4 - players.length} MORE` : '⚡ START THE RECKONING'}
             </button>
           )}
         </div>
@@ -565,26 +949,38 @@ function LobbyScreen({ players, myId, isHost, config, onReady, onSetConfig, onSt
   );
 }
 
+// Helper for converting hex color to rgb
+function hexToRgb(hex) {
+  if (!hex) return '201,168,76';
+  const m = hex.replace('#', '').match(/.{1,2}/g);
+  if (!m || m.length < 3) return '201,168,76';
+  return `${parseInt(m[0], 16)},${parseInt(m[1], 16)},${parseInt(m[2], 16)}`;
+}
+
 // ─── Game Over Screen ──────────────────────────────────────────────────────────
 function GameOverScreen({ winner, reason, roleReveal, isHost, onPlayAgain }) {
   return (
     <div className="gameover-screen">
-      <DustParticles count={30} />
+      <DustParticles count={40} />
+      <SmokeAtmosphere count={4} />
+      <Ravens count={3} />
+      <Scanline />
       <div className="gameover-content animate-burn">
-        <div className="gameover-banner" style={{ color: winner === 'killer' ? '#c0392b' : '#c9a84c' }}>
-          <div className="rye gameover-title">
-            {winner === 'killer' ? '☠️ OUTLAWS WIN ☠️' : '⭐ JUSTICE PREVAILS ⭐'}
+        <div className="gameover-banner" style={{ color: winner === 'killer' ? '#e63946' : '#f4d03f' }}>
+          <div className="gameover-title">
+            {winner === 'killer' ? '☠️  OUTLAWS  RULE  ☠️' : '⭐  JUSTICE  PREVAILS  ⭐'}
           </div>
         </div>
-        <div className="gameover-reason playfair">{reason}</div>
+        <div className="gameover-reason">{reason}</div>
         <div className="gameover-divider">✦ ✦ ✦</div>
         <div className="role-reveal-section">
-          <div className="rye role-reveal-title">THE TRUE IDENTITIES</div>
+          <div className="role-reveal-title">— The True Identities —</div>
           <div className="role-reveal-grid">
-            {roleReveal?.map(p => {
+            {roleReveal?.map((p, i) => {
               const info = ROLE_INFO[p.role] || {};
               return (
-                <div key={p.id} className={`reveal-card ${info.team}`}>
+                <div key={p.id} className={`reveal-card ${info.team}`}
+                  style={{ animationDelay: `${i * 0.1}s` }}>
                   <div className="reveal-emoji">{info.emoji || '👤'}</div>
                   <div className="reveal-name">{p.name}</div>
                   <div className="reveal-role" style={{ color: info.color }}>{info.label || p.role}</div>
@@ -598,7 +994,7 @@ function GameOverScreen({ winner, reason, roleReveal, isHost, onPlayAgain }) {
         </div>
         {isHost && (
           <button className="start-btn" onClick={onPlayAgain}>
-            <span className="rye">PLAY AGAIN</span>
+            🤠 RIDE AGAIN
           </button>
         )}
       </div>
@@ -613,6 +1009,9 @@ export default function App() {
   const [isHost, setIsHost] = useState(false);
   const [playerName, setPlayerName] = useState('');
   const [nameInput, setNameInput] = useState('');
+  const [codeInput, setCodeInput] = useState('');
+  const [entryMode, setEntryMode] = useState('menu'); // menu | create | join
+  const [roomCode, setRoomCode] = useState(null);
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState('');
   const [notification, setNotification] = useState(null);
@@ -621,38 +1020,63 @@ export default function App() {
   const [showRoleCard, setShowRoleCard] = useState(false);
   const [prevPhase, setPrevPhase] = useState(null);
   const [rpsResult, setRpsResult] = useState(null);
+  const [soundOn, setSoundOn] = useState(true);
+  const [killedThisRound, setKilledThisRound] = useState(null);
+  const [myVote, setMyVote] = useState(null);
 
   const notify = useCallback((msg, type = 'info', duration = 4000) => {
     setNotification({ msg, type });
     setTimeout(() => setNotification(null), duration);
   }, []);
 
+  // Blip when a new chat message arrives (from someone else)
+  const lastChatLenRef = useRef(0);
+  useEffect(() => {
+    const log = gameState?.chatLog || [];
+    if (log.length > lastChatLenRef.current && lastChatLenRef.current !== 0) {
+      const last = log[log.length - 1];
+      if (last && last.playerId !== myId) sfx.blip();
+    }
+    lastChatLenRef.current = log.length;
+  }, [gameState?.chatLog, myId]);
+
   const { send, connected } = useWebSocket(useCallback((data) => {
     switch (data.type) {
       case 'JOINED':
         setMyId(data.playerId);
         setIsHost(data.isHost);
+        setRoomCode(data.roomCode);
         setJoined(true);
+        sfx.chime();
         break;
       case 'STATE_UPDATE':
         setGameState(prev => {
-          if (prev?.phase !== data.state.phase) {
+          const newPhase = data.state.phase;
+          if (prev?.phase !== newPhase) {
             setPrevPhase(prev?.phase);
-            if (data.state.phase === 'night' && data.state.myRole) setShowRoleCard(false);
+            // Phase transition sounds
+            if (newPhase === 'day') sfx.dawn();
+            else if (newPhase === 'night') sfx.dusk();
+            else if (newPhase === 'rps') sfx.showdown();
           }
           return data.state;
         });
-        if (data.state.phase === 'night' && data.state.myRole && prevPhase === 'lobby') {
-          setShowRoleCard(true);
-        }
+        break;
+      case 'PLAYER_JOINED':
+        sfx.hoof();
         break;
       case 'GAME_STARTING':
-        notify('🎲 The reckoning begins! Roles are being assigned...', 'warn', 3000);
+        notify('🎲 Categories dealt — choose your path!', 'warn', 3000);
+        sfx.chime();
+        break;
+      case 'SELECTION_COMPLETE':
         setShowRoleCard(true);
+        notify('✊ All roles locked in! The reckoning begins...', 'good', 3000);
         break;
       case 'INVESTIGATE_RESULT':
         setInvestigateResults(data.results);
         notify(`🔍 Investigation complete — ${data.results.length} result(s)`, 'info', 6000);
+        sfx.chime();
         break;
       case 'FORENSIC_RESULT':
         setForensicResult(data);
@@ -660,15 +1084,23 @@ export default function App() {
         break;
       case 'PLAYER_KILLED':
         notify(`💀 ${data.playerName} was found dead at dawn.`, 'bad', 5000);
+        sfx.gunshot();
+        setKilledThisRound(data.playerId);
+        setTimeout(() => setKilledThisRound(null), 1200);
         break;
       case 'PLAYER_ELIMINATED':
         notify(`🪓 ${data.playerName} was eliminated by the town!`, 'warn', 5000);
+        sfx.gunshot();
+        setKilledThisRound(data.playerId);
+        setTimeout(() => setKilledThisRound(null), 1200);
+        setMyVote(null);
         break;
       case 'RPS_RESULT':
         setRpsResult(data);
         setTimeout(() => setRpsResult(null), 5000);
         break;
       case 'GAME_OVER':
+        if (data.winner === 'good') sfx.win(); else sfx.lose();
         break;
       case 'LOBBY_RESET':
         setInvestigateResults([]);
@@ -684,46 +1116,115 @@ export default function App() {
     }
   }, [prevPhase, notify]));
 
-  const handleJoin = () => {
+  const handleCreate = () => {
     const name = nameInput.trim();
     if (!name) return;
     setPlayerName(name);
-    send({ type: 'JOIN', name });
+    send({ type: 'CREATE_ROOM', name });
+  };
+
+  const handleJoinRoom = () => {
+    const name = nameInput.trim();
+    const code = codeInput.trim().toUpperCase();
+    if (!name || code.length !== 4) return;
+    setPlayerName(name);
+    send({ type: 'JOIN_ROOM', name, code });
+  };
+
+  const toggleSound = () => {
+    const next = !soundOn;
+    setSoundOn(next);
+    setSoundEnabled(next);
+    if (next) sfx.chime();
   };
 
   // ── Entry Screen ──────────────────────────────────────────────────────────────
   if (!joined) {
     return (
       <div className="entry-screen">
-        <DustParticles count={25} />
-        <div className="entry-content animate-burn">
+        <DustParticles count={30} />
+        <SmokeAtmosphere count={3} />
+        <Ravens count={2} />
+        <Scanline />
+
+        <button className="sound-toggle entry-sound" onClick={toggleSound} title="Toggle sound">
+          {soundOn ? '🔊' : '🔇'}
+        </button>
+
+        <div className="entry-content">
           <div className="entry-badge">⭐</div>
-          <h1 className="game-title rye flicker">DEADWOOD</h1>
-          <div className="entry-subtitle playfair">— The Reckoning —</div>
+          <h1 className="game-title animate-title">DEADWOOD</h1>
+          <div className="title-revolvers">
+            <span>🔫</span>
+            <span style={{ color: 'var(--gold)' }}>✦</span>
+            <span>🔫</span>
+          </div>
+          <div className="entry-subtitle">— The Reckoning —</div>
           <div className="entry-divider">✦ ✦ ✦</div>
 
           <div className="wanted-frame">
+            <div className="bullet-hole b1"></div>
+            <div className="bullet-hole b2"></div>
+            <div className="bullet-hole b3"></div>
             <div className="wanted-frame-top">WANTED</div>
-            <div className="wanted-frame-sub">Your Name, Stranger</div>
+            <div className="wanted-frame-sub">— Identify Yourself, Stranger —</div>
             <div className="name-input-wrap">
               <input
                 className="name-input"
                 type="text"
-                placeholder="Enter your name, partner..."
+                placeholder="your name here..."
                 value={nameInput}
                 onChange={e => setNameInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleJoin()}
                 maxLength={20}
+                autoFocus
               />
             </div>
-            <div className="reward-text">REWARD: {nameInput.length > 0 ? '— CLAIMED —' : 'UNCLAIMED'}</div>
+
+            {entryMode === 'menu' && (
+              <div className="entry-menu">
+                <button className="enter-btn block" onClick={() => nameInput.trim() && setEntryMode('create')}
+                  disabled={!nameInput.trim() || !connected}>
+                  🏠 CREATE A SALOON
+                </button>
+                <button className="enter-btn block ghost" onClick={() => nameInput.trim() && setEntryMode('join')}
+                  disabled={!nameInput.trim() || !connected}>
+                  🚪 JOIN BY CODE
+                </button>
+              </div>
+            )}
+
+            {entryMode === 'create' && (
+              <div className="entry-menu">
+                <div className="reward-text">REWARD<span className="amount">$5,000</span></div>
+                <button className="enter-btn block" onClick={handleCreate} disabled={!connected}>
+                  🐎 OPEN THE SALOON
+                </button>
+                <button className="text-back" onClick={() => setEntryMode('menu')}>← back</button>
+              </div>
+            )}
+
+            {entryMode === 'join' && (
+              <div className="entry-menu">
+                <input
+                  className="code-input"
+                  type="text"
+                  placeholder="ROOM CODE"
+                  value={codeInput}
+                  onChange={e => setCodeInput(e.target.value.toUpperCase().slice(0, 4))}
+                  onKeyDown={e => e.key === 'Enter' && handleJoinRoom()}
+                  maxLength={4}
+                />
+                <button className="enter-btn block" onClick={handleJoinRoom}
+                  disabled={codeInput.trim().length !== 4 || !connected}>
+                  🐎 RIDE IN
+                </button>
+                <button className="text-back" onClick={() => setEntryMode('menu')}>← back</button>
+              </div>
+            )}
           </div>
 
-          <button className="enter-btn rye" onClick={handleJoin} disabled={!nameInput.trim() || !connected}>
-            {connected ? 'RIDE INTO TOWN' : 'CONNECTING...'}
-          </button>
-
-          {!connected && <div className="connecting-msg">🔄 Connecting to the telegraph...</div>}
+          {!connected && <div className="connecting-msg">📡 Tappin' the telegraph wire...</div>}
+          {error && <div className="error-banner animate-stamp">⚠️ {error}</div>}
         </div>
       </div>
     );
@@ -733,23 +1234,43 @@ export default function App() {
     return <div className="loading-screen"><div className="rye flicker">Loading...</div></div>;
   }
 
-  const { phase, players, round, config, gameLog, rpsState, winner, skipVoteCount, skipVoteRequired } = gameState;
+  const { phase, players, round, config, gameLog, rpsState, winner, skipVoteCount, skipVoteRequired, phaseEndsAt, roomCode: stateRoomCode } = gameState;
   const { myRole, pendingAction, policeTarget, forensicUsed, forensicDoubleCheck,
-    bayHarborCooldownActive, surgeonCooldownActive, policeCooldownActive } = gameState;
+    bayHarborCooldownActive, surgeonCooldownActive, policeCooldownActive,
+    myCategory, mySelectedVariant, availableVariants, pendingSelection, selectionWaitingCount,
+    chatLog, canGhostChat } = gameState;
 
   const myPlayer = players.find(p => p.id === myId);
   const isAlive = myPlayer?.alive;
+  const sendChat = (text) => send({ type: 'CHAT', text });
+
+  // ── Role Selection Phase ────────────────────────────────────────────────────────
+  if (phase === 'roleselect') {
+    return (
+      <RoleSelectScreen
+        category={myCategory}
+        available={availableVariants || []}
+        selected={mySelectedVariant && mySelectedVariant !== 'CIVILIAN' ? mySelectedVariant : (myCategory === 'civilian' ? null : (pendingSelection ? null : mySelectedVariant))}
+        pending={pendingSelection}
+        waitingCount={selectionWaitingCount || 0}
+        onSelect={(variant) => send({ type: 'SELECT_VARIANT', variant })}
+        players={players}
+        myId={myId}
+      />
+    );
+  }
 
   // ── Role Reveal ───────────────────────────────────────────────────────────────
-  if (showRoleCard && myRole && phase !== 'lobby') {
+  if (showRoleCard && myRole && phase !== 'lobby' && phase !== 'roleselect') {
     return (
       <div className="role-reveal-screen">
         <DustParticles />
+        <SmokeAtmosphere count={2} />
         <div className="role-reveal-content animate-burn">
-          <div className="rye role-reveal-header">Your Fate Has Been Drawn</div>
+          <div className="role-reveal-header">Your Fate Is Sealed</div>
           <RoleRevealCard role={myRole} />
-          <button className="enter-btn rye" onClick={() => setShowRoleCard(false)}>
-            I ACCEPT MY ROLE
+          <button className="enter-btn" onClick={() => setShowRoleCard(false)}>
+            ⚡ I ACCEPT MY ROLE
           </button>
         </div>
       </div>
@@ -773,6 +1294,9 @@ export default function App() {
   if (phase === 'lobby') {
     return (
       <>
+        <button className="sound-toggle entry-sound" onClick={toggleSound} title="Toggle sound">
+          {soundOn ? '🔊' : '🔇'}
+        </button>
         <LobbyScreen
           players={players}
           myId={myId}
@@ -782,6 +1306,7 @@ export default function App() {
           onSetConfig={(cfg) => send({ type: 'SET_CONFIG', ...cfg })}
           onStart={() => send({ type: 'START_GAME' })}
           error={error}
+          roomCode={stateRoomCode || roomCode}
         />
         {notification && (
           <div className={`notification ${notification.type}`}>{notification.msg}</div>
@@ -796,7 +1321,13 @@ export default function App() {
 
   return (
     <div className={`game-screen ${phase}-phase`}>
-      <DustParticles count={8} />
+      <DustParticles count={phase === 'night' ? 12 : 8} />
+      {phase === 'night' && <SmokeAtmosphere count={3} />}
+      {phase === 'day' && <Tumbleweed count={1} />}
+      <Scanline />
+
+      {phase === 'day' && <div className="sun" />}
+      {phase === 'night' && <div className="moon" />}
 
       {/* RPS Overlay */}
       {phase === 'rps' && rpsState && (
@@ -811,35 +1342,73 @@ export default function App() {
       <div className="game-header">
         <div className="phase-indicator">
           <div className={`phase-orb ${phase}`} />
-          <span className="rye phase-label">
-            {phase === 'day' ? `☀️ DAY ${round}` : phase === 'night' ? `🌙 NIGHT ${round}` : ''}
+          <span className="phase-label">
+            {phase === 'day' ? `☀ DAY ${round}` : phase === 'night' ? `🌙 NIGHT ${round}` : ''}
           </span>
         </div>
-        <div className="game-title-small rye flicker">DEADWOOD</div>
-        <div className="my-role-badge" style={{ '--rc': ROLE_INFO[myRole]?.color }}>
-          <span>{ROLE_INFO[myRole]?.emoji}</span>
-          <span>{ROLE_INFO[myRole]?.label || 'Observer'}</span>
+        <div className="game-title-small">DEADWOOD</div>
+        <div className="header-right">
+          {stateRoomCode && <span className="room-code-badge" title="Room code">🎫 {stateRoomCode}</span>}
+          <button className="sound-toggle" onClick={toggleSound} title="Toggle sound">
+            {soundOn ? '🔊' : '🔇'}
+          </button>
+          <div className="my-role-badge" style={{ '--rc': ROLE_INFO[myRole]?.color }}>
+            <span className="emoji-large">{ROLE_INFO[myRole]?.emoji}</span>
+            <span>{ROLE_INFO[myRole]?.label || 'Observer'}</span>
+          </div>
         </div>
       </div>
+
+      {/* Saloon scene — animated 2D table view */}
+      <SaloonScene
+        players={players}
+        myId={myId}
+        phase={phase}
+        voteCounts={gameState.voteCounts}
+        myVote={myVote}
+        recentChat={chatLog}
+        rolesByPlayerId={gameState.killerTeam
+          ? Object.fromEntries([
+              ...(gameState.killerTeam || []).map(k => [k.id, 'KILLER_TEAM']),
+              [myId, myRole],
+            ])
+          : { [myId]: myRole }}
+        myRole={myRole}
+        killedThisRound={killedThisRound}
+        onSelectPlayer={(targetId) => {
+          if (targetId === myId) return; // can't act on self in most cases
+          if (phase === 'day') {
+            setMyVote(targetId);
+            send({ type: 'VOTE', targetId });
+            sfx.chime();
+          }
+        }}
+      />
 
       <div className="game-layout">
         {/* Left: Players */}
         <div className="game-left">
-          <div className="section-header rye">🤠 The Town ({alivePlayers.length} alive)</div>
+          <div className="section-header">
+            <span>🤠</span>
+            <span>The Town — {alivePlayers.length} alive</span>
+          </div>
           <div className="player-grid">
             {alivePlayers.map(p => (
               <div key={p.id} className={`player-tag alive ${p.id === myId ? 'is-me' : ''}`}>
                 <span className="player-tag-icon">🤠</span>
                 <span className="player-tag-name">{p.name}</span>
                 {p.id === myId && <span className="you-tag">YOU</span>}
-                {p.isHost && <span className="marshal-tag">MARSHAL</span>}
+                {p.isHost && <span className="marshal-tag">★</span>}
               </div>
             ))}
           </div>
 
           {deadPlayers.length > 0 && (
             <>
-              <div className="section-header rye dead-header">💀 The Departed</div>
+              <div className="section-header dead-header">
+                <span>💀</span>
+                <span>The Departed</span>
+              </div>
               <div className="player-grid">
                 {deadPlayers.map(p => (
                   <div key={p.id} className="player-tag dead">
@@ -853,6 +1422,14 @@ export default function App() {
           )}
 
           <GameLog entries={gameLog} />
+
+          <ChatPanel
+            chatLog={chatLog}
+            canGhostChat={canGhostChat}
+            canSend={isAlive ? (phase !== 'night') : false}
+            onSend={sendChat}
+            phase={phase}
+          />
         </div>
 
         {/* Right: Actions */}
@@ -870,6 +1447,7 @@ export default function App() {
               votes={gameState.votes}
               policeTarget={policeTarget}
               policeCooldownActive={policeCooldownActive}
+              phaseEndsAt={phaseEndsAt}
             />
           )}
 
@@ -882,40 +1460,43 @@ export default function App() {
               pendingAction={pendingAction}
               cooldowns={{ bayHarborCooldownActive, surgeonCooldownActive, policeCooldownActive, forensicUsed }}
               policeTarget={policeTarget}
+              phaseEndsAt={phaseEndsAt}
             />
           )}
 
           {phase === 'night' && isAlive && myRole === 'CIVILIAN' && (
             <div className="civilian-night">
+              <div className="clock-center-wrap">
+                <BigClock endsAt={phaseEndsAt} totalMs={25000} label="NIGHT" />
+              </div>
               <div className="night-waiting-icon">🌙</div>
-              <div className="rye">Rest, civilian.</div>
-              <div>The night holds its secrets...</div>
+              <div className="rye">Rest your weary bones, civilian.</div>
+              <div>The night holds its dark secrets...</div>
+              <RevolverSpinner />
             </div>
           )}
 
           {!isAlive && phase !== 'gameover' && (
             <div className="dead-observer">
-              <div className="dead-observer-icon">💀</div>
-              <div className="rye">You have fallen.</div>
-              <div>Watch the living play out their fate...</div>
+              <div className="dead-observer-icon">⚰️</div>
+              <div className="rye">Yer Six Feet Under, Partner.</div>
+              <div>Watch the livin' play out their fate from beyond...</div>
             </div>
           )}
 
           {/* Investigate Results */}
           {investigateResults.length > 0 && (
             <div className="investigate-panel animate-paper">
-              <div className="rye inv-title">🔍 Investigation Results</div>
+              <div className="inv-title">🔍 Investigation Report</div>
               {investigateResults.map((r, i) => (
                 <div key={i} className={`inv-result ${r.team}`}>
                   <span>{ROLE_INFO[r.role]?.emoji}</span>
                   <span className="inv-name">{r.name}</span>
-                  <span className="inv-role" style={{ color: ROLE_INFO[r.role]?.color }}>
-                    {ROLE_INFO[r.role]?.label}
-                  </span>
-                  <span className={`inv-team ${r.team}`}>{r.team === 'killer' ? '☠️' : '⭐'}</span>
+                  <span className="inv-role">{ROLE_INFO[r.role]?.label}</span>
+                  <span className="inv-team">{r.team === 'killer' ? '☠️' : '⭐'}</span>
                 </div>
               ))}
-              <button className="clear-btn" onClick={() => setInvestigateResults([])}>Dismiss</button>
+              <button className="clear-btn" onClick={() => setInvestigateResults([])}>Burn Evidence</button>
             </div>
           )}
 

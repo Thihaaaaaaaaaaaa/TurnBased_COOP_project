@@ -11,38 +11,18 @@ const PORT = process.env.PORT || 3001;
 const server = require('http').createServer(app);
 const wss = new WebSocketServer({ server });
 
-// ─── Game State ───────────────────────────────────────────────────────────────
-let gameState = {
-  phase: 'lobby',        // lobby | day | night | rps | gameover
-  players: {},           // id -> player object
-  host: null,
-  round: 0,
-  dayTimer: null,
-  nightTimers: {},
-  config: { killers: 1, doctors: 1, detectives: 1 },
-  votes: {},             // playerId -> targetId
-  skipVotes: new Set(),
-  nightActions: {},      // playerId -> { action, target, delay? }
-  pendingNightActions: new Set(), // who still needs to act
-  deadThisNight: [],
-  savedThisNight: [],
-  rpsState: null,
-  forensicUsed: {},      // playerId -> boolean
-  geminiScheduled: [],   // { killerId, targetId, roundToExecute }
-  bayHarborCooldown: {}, // playerId -> lastKillRound
-  surgeonCooldown: {},   // playerId -> lastReviveRound
-  policeCooldown: {},    // playerId -> lastProtectRound
-  policeTargets: {},     // playerId -> targetId (set during day)
-  protected: new Set(),  // protected tonight
-  gameLog: [],
-  sessionExpireTimer: null,
-};
+// ─── Rooms ──────────────────────────────────────────────────────────────────
+// Each room is a self-contained game. `gameState` always points at the room
+// currently being operated on; timer callbacks re-point it via withRoom().
+const rooms = new Map(); // code -> room
 
-function resetGame() {
-  clearAllTimers();
-  gameState = {
-    phase: 'lobby',
-    players: {},
+let gameState = null; // active room pointer
+
+function makeRoom(code) {
+  return {
+    code,
+    phase: 'lobby',        // lobby | roleselect | day | night | rps | gameover
+    players: {},           // id -> player object
     host: null,
     round: 0,
     dayTimer: null,
@@ -63,12 +43,57 @@ function resetGame() {
     policeTargets: {},
     protected: new Set(),
     gameLog: [],
+    chatLog: [],            // { name, msg, channel: 'town'|'ghost', time }
     sessionExpireTimer: null,
+    playerCategory: {},
+    selectedVariant: {},
+    pendingSelection: new Set(),
+    selectionTimer: null,
+    rpsTimeout: null,
+    winner: null,
+    phaseEndsAt: null,
   };
+}
+
+function generateRoomCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+  let code;
+  do {
+    code = '';
+    for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  } while (rooms.has(code));
+  return code;
+}
+
+// Run fn with gameState pointed at the given room. Restores prior pointer after.
+function withRoom(room, fn) {
+  if (!room || !rooms.has(room.code)) return; // room was torn down
+  const prev = gameState;
+  gameState = room;
+  try { fn(); } finally { gameState = prev; }
+}
+
+function resetGame() {
+  // Re-initialize the ACTIVE room in place, preserving its code.
+  clearAllTimers();
+  const code = gameState.code;
+  const fresh = makeRoom(code);
+  // copy fresh fields onto existing object so references (rooms map) stay valid
+  Object.keys(gameState).forEach(k => { delete gameState[k]; });
+  Object.assign(gameState, fresh);
+}
+
+function destroyRoom(room) {
+  if (!room) return;
+  withRoom(room, () => clearAllTimers());
+  rooms.delete(room.code);
+  console.log(`Room ${room.code} destroyed.`);
 }
 
 function clearAllTimers() {
   if (gameState.dayTimer) clearTimeout(gameState.dayTimer);
+  if (gameState.selectionTimer) clearTimeout(gameState.selectionTimer);
+  if (gameState.rpsTimeout) clearTimeout(gameState.rpsTimeout);
   Object.values(gameState.nightTimers).forEach(t => clearTimeout(t));
   if (gameState.sessionExpireTimer) clearTimeout(gameState.sessionExpireTimer);
 }
@@ -144,6 +169,13 @@ function buildPublicState() {
     winner: gameState.winner || null,
     skipVoteCount: gameState.skipVotes.size,
     skipVoteRequired: Math.ceil(alivePlayers().length / 2),
+    phaseEndsAt: gameState.phaseEndsAt || null,
+    roomCode: gameState.code,
+    voteCounts: (() => {
+      const t = {};
+      Object.values(gameState.votes || {}).forEach(v => { t[v] = (t[v] || 0) + 1; });
+      return t;
+    })(),
   };
 }
 
@@ -160,13 +192,25 @@ function buildPrivateState(playerId) {
     bayHarborCooldownActive: isBayHarborOnCooldown(playerId),
     surgeonCooldownActive: isSurgeonOnCooldown(playerId),
     policeCooldownActive: isPolicOnCooldown(playerId),
+    // Role selection
+    myCategory: gameState.playerCategory[playerId] || null,
+    mySelectedVariant: gameState.selectedVariant[playerId] || null,
+    availableVariants: gameState.phase === 'roleselect' ? availableVariantsFor(playerId) : [],
+    pendingSelection: gameState.pendingSelection.has(playerId),
+    selectionWaitingCount: gameState.pendingSelection.size,
   };
-  // Killers can see each other
-  if (p.role && p.role.includes('KILLER') || p.role === 'BAY_HARBOR') {
+  // Killers can see each other (only once roles are finalized)
+  if (ROLES[p.role]?.team === 'killer') {
     state.killerTeam = Object.entries(gameState.players)
-      .filter(([id, pl]) => pl.role && (pl.role.includes('KILLER') || pl.role === 'BAY_HARBOR') && id !== playerId)
+      .filter(([id, pl]) => ROLES[pl.role]?.team === 'killer' && id !== playerId)
       .map(([id, pl]) => ({ id, name: pl.name }));
   }
+  // Chat: living players see town chat; dead players see town + ghost chat
+  const isDead = !p.alive;
+  state.chatLog = gameState.chatLog
+    .filter(c => c.channel === 'town' || (isDead && c.channel === 'ghost'))
+    .slice(-50);
+  state.canGhostChat = isDead;
   return state;
 }
 
@@ -209,21 +253,98 @@ function assignRoles() {
 
   if (specialCount > total) return false;
 
-  const roles = [];
-  const killerRoles = shuffle([...KILLER_VARIANTS]).slice(0, killers);
-  const doctorRoles = shuffle([...DOCTOR_VARIANTS]).slice(0, doctors);
-  const detectiveRoles = shuffle([...DETECTIVE_VARIANTS]).slice(0, detectives);
-  roles.push(...killerRoles, ...doctorRoles, ...detectiveRoles);
-  while (roles.length < total) roles.push('CIVILIAN');
+  // Build category list: assign each special player a CATEGORY (not a variant yet)
+  const categories = [];
+  for (let i = 0; i < killers; i++) categories.push('killer');
+  for (let i = 0; i < doctors; i++) categories.push('doctor');
+  for (let i = 0; i < detectives; i++) categories.push('detective');
+  while (categories.length < total) categories.push('civilian');
 
-  const shuffledRoles = shuffle(roles);
+  const shuffledCats = shuffle(categories);
   const shuffledIds = shuffle([...playerIds]);
+
+  // Reset selection state
+  gameState.playerCategory = {};   // id -> 'killer'|'doctor'|'detective'|'civilian'
+  gameState.selectedVariant = {};  // id -> chosen variant string
+  gameState.pendingSelection = new Set();
+
   shuffledIds.forEach((id, i) => {
-    gameState.players[id].role = shuffledRoles[i];
+    const cat = shuffledCats[i];
     gameState.players[id].alive = true;
     gameState.players[id].eliminated = false;
+    gameState.playerCategory[id] = cat;
+    if (cat === 'civilian') {
+      gameState.players[id].role = 'CIVILIAN';
+      gameState.selectedVariant[id] = 'CIVILIAN';
+    } else {
+      gameState.players[id].role = null; // chosen in roleselect phase
+      gameState.pendingSelection.add(id);
+    }
   });
   return true;
+}
+
+const CATEGORY_VARIANTS = {
+  killer: KILLER_VARIANTS,
+  doctor: DOCTOR_VARIANTS,
+  detective: DETECTIVE_VARIANTS,
+};
+
+// Which variants in a player's category are still free (not taken by a same-category player)?
+function availableVariantsFor(playerId) {
+  const cat = gameState.playerCategory[playerId];
+  if (!cat || cat === 'civilian') return [];
+  const all = CATEGORY_VARIANTS[cat];
+  const takenByOthers = Object.entries(gameState.selectedVariant)
+    .filter(([id]) => id !== playerId && gameState.playerCategory[id] === cat)
+    .map(([, v]) => v);
+  return all.filter(v => !takenByOthers.includes(v));
+}
+
+// When all special players have locked a variant, finalize and start the game
+function checkSelectionComplete() {
+  const room = gameState;
+  if (gameState.pendingSelection.size === 0) {
+    if (gameState.selectionTimer) { clearTimeout(gameState.selectionTimer); gameState.selectionTimer = null; }
+    // Apply chosen variants to player roles
+    Object.entries(gameState.selectedVariant).forEach(([id, variant]) => {
+      if (gameState.players[id]) gameState.players[id].role = variant;
+    });
+    addLog(`🎲 All roles are locked in. The reckoning begins!`);
+    broadcast({ type: 'SELECTION_COMPLETE' });
+    setTimeout(() => withRoom(room, () => startDay()), 1500);
+    return true;
+  }
+  broadcastGameState();
+  return false;
+}
+
+// Auto-pick a random available variant for anyone who didn't choose in time
+function autoPickRemaining() {
+  gameState.pendingSelection.forEach(id => {
+    const avail = availableVariantsFor(id);
+    const pick = avail[Math.floor(Math.random() * avail.length)] || CATEGORY_VARIANTS[gameState.playerCategory[id]][0];
+    gameState.selectedVariant[id] = pick;
+    addLog(`⏳ ${gameState.players[id]?.name} let fate decide their path.`);
+  });
+  gameState.pendingSelection = new Set();
+  checkSelectionComplete();
+}
+
+const ROLE_SELECT_DURATION = 25000;
+
+function startRoleSelection() {
+  const room = gameState;
+  gameState.phase = 'roleselect';
+  addLog(`📜 Special roles, choose your path...`);
+  broadcast({ type: 'PHASE_CHANGE', phase: 'roleselect', duration: ROLE_SELECT_DURATION });
+  broadcastGameState();
+
+  if (gameState.pendingSelection.size === 0) {
+    setTimeout(() => withRoom(room, () => checkSelectionComplete()), 500);
+    return;
+  }
+  gameState.selectionTimer = setTimeout(() => withRoom(room, () => autoPickRemaining()), ROLE_SELECT_DURATION);
 }
 
 // ─── Cooldown Helpers ─────────────────────────────────────────────────────────
@@ -277,7 +398,7 @@ function endGame(winner, reason) {
 }
 
 // ─── Day Phase ────────────────────────────────────────────────────────────────
-const DAY_DURATION = 20000;
+const DAY_DURATION = 30000;
 
 function startDay() {
   gameState.phase = 'day';
@@ -303,12 +424,14 @@ function startDay() {
   gameState.protected = new Set();
 
   addLog(`☀️ Day ${gameState.round} begins. Discuss and vote!`);
+  gameState.phaseEndsAt = Date.now() + DAY_DURATION;
   broadcastGameState();
   broadcast({ type: 'PHASE_CHANGE', phase: 'day', round: gameState.round, duration: DAY_DURATION });
 
   if (checkWinCondition()) return;
 
-  gameState.dayTimer = setTimeout(() => endDay(), DAY_DURATION);
+  const room = gameState;
+  gameState.dayTimer = setTimeout(() => withRoom(room, () => endDay()), DAY_DURATION);
 }
 
 function endDay() {
@@ -356,31 +479,34 @@ function startNight() {
   });
 
   addLog(`🌙 Night ${gameState.round} falls. Special roles, take your actions...`);
+  gameState.phaseEndsAt = Date.now() + NIGHT_ACTION_TIMEOUT;
   broadcastGameState();
-  broadcast({ type: 'PHASE_CHANGE', phase: 'night', round: gameState.round });
+  broadcast({ type: 'PHASE_CHANGE', phase: 'night', round: gameState.round, duration: NIGHT_ACTION_TIMEOUT });
 
   // Set timers for each player
+  const room = gameState;
   gameState.pendingNightActions.forEach(id => {
-    gameState.nightTimers[id] = setTimeout(() => {
+    gameState.nightTimers[id] = setTimeout(() => withRoom(room, () => {
       if (gameState.pendingNightActions.has(id)) {
         gameState.nightActions[id] = { action: 'skip' };
         gameState.pendingNightActions.delete(id);
         addLog(`⏭️ ${gameState.players[id]?.name} ran out of time and skipped.`);
         checkNightComplete();
       }
-    }, NIGHT_ACTION_TIMEOUT);
+    }), NIGHT_ACTION_TIMEOUT);
   });
 
   if (gameState.pendingNightActions.size === 0) {
-    setTimeout(() => resolveNight(), 500);
+    setTimeout(() => withRoom(room, () => resolveNight()), 500);
   }
 }
 
 function checkNightComplete() {
+  const room = gameState;
   if (gameState.pendingNightActions.size === 0) {
     Object.values(gameState.nightTimers).forEach(t => clearTimeout(t));
     gameState.nightTimers = {};
-    setTimeout(() => resolveNight(), 1500);
+    setTimeout(() => withRoom(room, () => resolveNight()), 1500);
   }
   broadcastGameState();
 }
@@ -482,7 +608,8 @@ function resolveNight() {
   });
 
   if (checkWinCondition()) return;
-  setTimeout(() => startDay(), 3000);
+  const room = gameState;
+  setTimeout(() => withRoom(room, () => startDay()), 3000);
 }
 
 function executeKill(targetId, killerId) {
@@ -513,11 +640,12 @@ function startRPS(sheriffId, killerId) {
   broadcastGameState();
 
   // Auto-timeout for RPS
-  gameState.rpsTimeout = setTimeout(() => {
+  const room = gameState;
+  gameState.rpsTimeout = setTimeout(() => withRoom(room, () => {
     if (!gameState.rpsState.choices[sheriffId]) gameState.rpsState.choices[sheriffId] = 'rock';
     if (!gameState.rpsState.choices[killerId]) gameState.rpsState.choices[killerId] = 'rock';
     resolveRPS();
-  }, 15000);
+  }), 15000);
 }
 
 function resolveRPS() {
@@ -534,11 +662,12 @@ function resolveRPS() {
     gameState.rpsState.round = (gameState.rpsState.round || 1) + 1;
     broadcast({ type: 'RPS_TIE', round: gameState.rpsState.round, sc, kc });
     broadcastGameState();
-    gameState.rpsTimeout = setTimeout(() => {
+    const room = gameState;
+    gameState.rpsTimeout = setTimeout(() => withRoom(room, () => {
       if (!gameState.rpsState.choices[sheriffId]) gameState.rpsState.choices[sheriffId] = 'rock';
       if (!gameState.rpsState.choices[killerId]) gameState.rpsState.choices[killerId] = 'rock';
       resolveRPS();
-    }, 15000);
+    }), 15000);
     return;
   }
 
@@ -558,200 +687,278 @@ function resolveRPS() {
 
 // ─── Session Management ───────────────────────────────────────────────────────
 function startSessionExpireTimer() {
+  const room = gameState;
   if (gameState.sessionExpireTimer) clearTimeout(gameState.sessionExpireTimer);
-  gameState.sessionExpireTimer = setTimeout(() => {
+  gameState.sessionExpireTimer = setTimeout(() => withRoom(room, () => {
     if (Object.keys(gameState.players).length === 0) {
-      resetGame();
-      console.log('Session expired — reset.');
+      destroyRoom(room);
+      console.log(`Room ${room.code} expired — destroyed.`);
     }
-  }, 60000);
+  }), 60000);
 }
 
 // ─── WebSocket Connection Handler ─────────────────────────────────────────────
 wss.on('connection', (ws) => {
   const playerId = uuidv4();
-  console.log(`Player connected: ${playerId}`);
+  let myRoom = null; // the room this socket belongs to
+  console.log(`Socket connected: ${playerId}`);
+
+  function joinRoomAsPlayer(room, name) {
+    const isHost = Object.keys(room.players).length === 0;
+    room.players[playerId] = {
+      id: playerId, name, ws, alive: true, ready: false, role: null, eliminated: false
+    };
+    if (isHost) room.host = playerId;
+    if (room.sessionExpireTimer) {
+      clearTimeout(room.sessionExpireTimer);
+      room.sessionExpireTimer = null;
+    }
+    myRoom = room;
+    addLog(`🤠 ${name} has ridden into town.`);
+    broadcast({ type: 'PLAYER_JOINED', playerId, name, isHost });
+    ws.send(JSON.stringify({ type: 'JOINED', playerId, isHost, roomCode: room.code }));
+    broadcastGameState();
+  }
 
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
 
-    switch (msg.type) {
+    // Lobby-finding messages don't need an active room yet
+    if (msg.type === 'CREATE_ROOM') {
+      const code = generateRoomCode();
+      const room = makeRoom(code);
+      rooms.set(code, room);
+      console.log(`Room ${code} created.`);
+      withRoom(room, () => {
+        const name = (msg.name || 'Stranger').slice(0, 20).trim() || 'Stranger';
+        joinRoomAsPlayer(room, name);
+      });
+      return;
+    }
 
-      case 'JOIN': {
-        const name = (msg.name || 'Stranger').slice(0, 20).trim();
-        if (Object.keys(gameState.players).length >= 10) {
+    if (msg.type === 'JOIN_ROOM') {
+      const code = (msg.code || '').toUpperCase().trim();
+      const room = rooms.get(code);
+      if (!room) {
+        ws.send(JSON.stringify({ type: 'ERROR', message: `No saloon with code "${code}"` }));
+        return;
+      }
+      withRoom(room, () => {
+        if (Object.keys(room.players).length >= 10) {
           ws.send(JSON.stringify({ type: 'ERROR', message: 'Posse is full (10 max)' }));
           return;
         }
-        if (gameState.phase !== 'lobby') {
-          ws.send(JSON.stringify({ type: 'ERROR', message: 'Game already in progress' }));
+        if (room.phase !== 'lobby') {
+          ws.send(JSON.stringify({ type: 'ERROR', message: 'That game already started' }));
           return;
         }
-        const isHost = Object.keys(gameState.players).length === 0;
-        gameState.players[playerId] = {
-          id: playerId, name, ws, alive: true, ready: false, role: null, eliminated: false
-        };
-        if (isHost) gameState.host = playerId;
-        if (gameState.sessionExpireTimer) {
-          clearTimeout(gameState.sessionExpireTimer);
-          gameState.sessionExpireTimer = null;
-        }
-        addLog(`🤠 ${name} has ridden into town.`);
-        broadcast({ type: 'PLAYER_JOINED', playerId, name, isHost });
-        ws.send(JSON.stringify({ type: 'JOINED', playerId, isHost }));
-        broadcastGameState();
-        break;
-      }
-
-      case 'READY': {
-        const p = gameState.players[playerId];
-        if (!p) return;
-        p.ready = !p.ready;
-        broadcast({ type: 'PLAYER_READY', playerId, ready: p.ready });
-        broadcastGameState();
-        break;
-      }
-
-      case 'SET_CONFIG': {
-        if (playerId !== gameState.host) return;
-        const { killers, doctors, detectives } = msg;
-        gameState.config = {
-          killers: Math.min(2, Math.max(1, killers || 1)),
-          doctors: Math.min(2, Math.max(1, doctors || 1)),
-          detectives: Math.min(2, Math.max(1, detectives || 1)),
-        };
-        broadcast({ type: 'CONFIG_UPDATED', config: gameState.config });
-        broadcastGameState();
-        break;
-      }
-
-      case 'START_GAME': {
-        if (playerId !== gameState.host) return;
-        const count = Object.keys(gameState.players).length;
-        if (count < 4) {
-          ws.send(JSON.stringify({ type: 'ERROR', message: 'Need at least 4 players to start!' }));
-          return;
-        }
-        const allReady = Object.values(gameState.players).every(p => p.id === gameState.host || p.ready);
-        if (!allReady) {
-          ws.send(JSON.stringify({ type: 'ERROR', message: 'Not all players are ready!' }));
-          return;
-        }
-        if (!assignRoles()) {
-          ws.send(JSON.stringify({ type: 'ERROR', message: 'Not enough players for the configured roles!' }));
-          return;
-        }
-        addLog(`🎲 Roles have been assigned. The game begins!`);
-        broadcast({ type: 'GAME_STARTING' });
-        setTimeout(() => startDay(), 2000);
-        break;
-      }
-
-      case 'VOTE': {
-        if (gameState.phase !== 'day') return;
-        const { targetId } = msg;
-        if (targetId && gameState.players[targetId]?.alive) {
-          gameState.votes[playerId] = targetId;
-          const voter = gameState.players[playerId];
-          addLog(`🗳️ ${voter?.name} cast a vote...`);
-          broadcastGameState();
-        }
-        break;
-      }
-
-      case 'SKIP_VOTE': {
-        if (gameState.phase !== 'day') return;
-        gameState.skipVotes.add(playerId);
-        const required = Math.ceil(aliveCount() / 2);
-        if (gameState.skipVotes.size >= required) {
-          addLog(`⏭️ Majority voted to skip the day.`);
-          if (gameState.dayTimer) clearTimeout(gameState.dayTimer);
-          endDay();
-        } else {
-          broadcastGameState();
-        }
-        break;
-      }
-
-      case 'NIGHT_ACTION': {
-        if (gameState.phase !== 'night') return;
-        if (!gameState.pendingNightActions.has(playerId)) return;
-        const p = gameState.players[playerId];
-        const { action, target, targets, delay, guess } = msg;
-        gameState.nightActions[playerId] = { action, target, targets, delay, guess };
-        gameState.pendingNightActions.delete(playerId);
-        if (gameState.nightTimers[playerId]) {
-          clearTimeout(gameState.nightTimers[playerId]);
-          delete gameState.nightTimers[playerId];
-        }
-        addLog(`🌑 ${p?.name} has made their move...`);
-        checkNightComplete();
-        break;
-      }
-
-      case 'POLICE_DAY_ACTION': {
-        if (gameState.phase !== 'day') return;
-        const p = gameState.players[playerId];
-        if (p?.role !== 'POLICE') return;
-        if (isPolicOnCooldown(playerId)) return;
-        gameState.policeTargets[playerId] = msg.targetId;
-        gameState.policeCooldown[playerId] = gameState.round;
-        sendTo(playerId, { type: 'POLICE_ACK', targetId: msg.targetId });
-        addLog(`🛡️ The Police has designated a protection target...`);
-        broadcastGameState();
-        break;
-      }
-
-      case 'RPS_CHOICE': {
-        if (gameState.phase !== 'rps') return;
-        const { choice } = msg;
-        const rps = gameState.rpsState;
-        if (!rps || !['rock', 'paper', 'scissors'].includes(choice)) return;
-        if (playerId !== rps.sheriffId && playerId !== rps.killerId) return;
-        rps.choices[playerId] = choice;
-        broadcastGameState();
-        if (rps.choices[rps.sheriffId] && rps.choices[rps.killerId]) {
-          resolveRPS();
-        }
-        break;
-      }
-
-      case 'PLAY_AGAIN': {
-        if (playerId !== gameState.host) return;
-        const oldPlayers = Object.entries(gameState.players).map(([id, p]) => ({ id, name: p.name, ws: p.ws }));
-        resetGame();
-        oldPlayers.forEach(({ id, name, ws: pws }) => {
-          const isHost = id === oldPlayers[0].id;
-          gameState.players[id] = { id, name, ws: pws, alive: true, ready: false, role: null, eliminated: false };
-          if (isHost) gameState.host = id;
-        });
-        broadcast({ type: 'LOBBY_RESET' });
-        broadcastGameState();
-        break;
-      }
+        const name = (msg.name || 'Stranger').slice(0, 20).trim() || 'Stranger';
+        joinRoomAsPlayer(room, name);
+      });
+      return;
     }
+
+    // All other messages require the socket to be in a room
+    if (!myRoom || !rooms.has(myRoom.code)) {
+      ws.send(JSON.stringify({ type: 'ERROR', message: 'You are not in a game' }));
+      return;
+    }
+
+    withRoom(myRoom, () => {
+      switch (msg.type) {
+
+        case 'CHAT': {
+          const p = gameState.players[playerId];
+          if (!p) return;
+          const text = (msg.text || '').slice(0, 200).trim();
+          if (!text) return;
+          // Dead players post to ghost chat; living to town chat.
+          // During night, living players cannot use town chat (only dead ghost-chat).
+          const channel = p.alive ? 'town' : 'ghost';
+          if (p.alive && gameState.phase === 'night') {
+            // No talking at night for the living
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'The town sleeps — no talking at night' }));
+            return;
+          }
+          gameState.chatLog.push({ name: p.name, msg: text, channel, time: Date.now(), playerId });
+          if (gameState.chatLog.length > 200) gameState.chatLog = gameState.chatLog.slice(-150);
+          broadcastGameState();
+          break;
+        }
+
+        case 'READY': {
+          const p = gameState.players[playerId];
+          if (!p) return;
+          p.ready = !p.ready;
+          broadcast({ type: 'PLAYER_READY', playerId, ready: p.ready });
+          broadcastGameState();
+          break;
+        }
+
+        case 'SET_CONFIG': {
+          if (playerId !== gameState.host) return;
+          const { killers, doctors, detectives } = msg;
+          gameState.config = {
+            killers: Math.min(2, Math.max(1, killers || 1)),
+            doctors: Math.min(2, Math.max(1, doctors || 1)),
+            detectives: Math.min(2, Math.max(1, detectives || 1)),
+          };
+          broadcast({ type: 'CONFIG_UPDATED', config: gameState.config });
+          broadcastGameState();
+          break;
+        }
+
+        case 'START_GAME': {
+          if (playerId !== gameState.host) return;
+          const count = Object.keys(gameState.players).length;
+          if (count < 4) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Need at least 4 players to start!' }));
+            return;
+          }
+          const allReady = Object.values(gameState.players).every(p => p.id === gameState.host || p.ready);
+          if (!allReady) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Not all players are ready!' }));
+            return;
+          }
+          if (!assignRoles()) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'Not enough players for the configured roles!' }));
+            return;
+          }
+          addLog(`🎲 Categories dealt. Choose your path, gunslingers!`);
+          broadcast({ type: 'GAME_STARTING' });
+          const room = gameState;
+          setTimeout(() => withRoom(room, () => startRoleSelection()), 1500);
+          break;
+        }
+
+        case 'SELECT_VARIANT': {
+          if (gameState.phase !== 'roleselect') return;
+          if (!gameState.pendingSelection.has(playerId)) return;
+          const { variant } = msg;
+          const avail = availableVariantsFor(playerId);
+          if (!avail.includes(variant)) {
+            ws.send(JSON.stringify({ type: 'ERROR', message: 'That role was just taken — pick another!' }));
+            broadcastGameState();
+            return;
+          }
+          gameState.selectedVariant[playerId] = variant;
+          gameState.pendingSelection.delete(playerId);
+          addLog(`✊ ${gameState.players[playerId]?.name} chose their path.`);
+          checkSelectionComplete();
+          break;
+        }
+
+        case 'VOTE': {
+          if (gameState.phase !== 'day') return;
+          const voterP = gameState.players[playerId];
+          if (!voterP || !voterP.alive) return;
+          const { targetId } = msg;
+          if (targetId && gameState.players[targetId]?.alive) {
+            gameState.votes[playerId] = targetId;
+            addLog(`🗳️ ${voterP?.name} cast a vote...`);
+            broadcastGameState();
+          }
+          break;
+        }
+
+        case 'SKIP_VOTE': {
+          if (gameState.phase !== 'day') return;
+          const sp = gameState.players[playerId];
+          if (!sp || !sp.alive) return;
+          gameState.skipVotes.add(playerId);
+          const required = Math.ceil(aliveCount() / 2);
+          if (gameState.skipVotes.size >= required) {
+            addLog(`⏭️ Majority voted to skip the day.`);
+            if (gameState.dayTimer) clearTimeout(gameState.dayTimer);
+            endDay();
+          } else {
+            broadcastGameState();
+          }
+          break;
+        }
+
+        case 'NIGHT_ACTION': {
+          if (gameState.phase !== 'night') return;
+          if (!gameState.pendingNightActions.has(playerId)) return;
+          const p = gameState.players[playerId];
+          const { action, target, targets, delay, guess } = msg;
+          gameState.nightActions[playerId] = { action, target, targets, delay, guess };
+          gameState.pendingNightActions.delete(playerId);
+          if (gameState.nightTimers[playerId]) {
+            clearTimeout(gameState.nightTimers[playerId]);
+            delete gameState.nightTimers[playerId];
+          }
+          addLog(`🌑 ${p?.name} has made their move...`);
+          checkNightComplete();
+          break;
+        }
+
+        case 'POLICE_DAY_ACTION': {
+          if (gameState.phase !== 'day') return;
+          const p = gameState.players[playerId];
+          if (p?.role !== 'POLICE') return;
+          if (isPolicOnCooldown(playerId)) return;
+          gameState.policeTargets[playerId] = msg.targetId;
+          gameState.policeCooldown[playerId] = gameState.round;
+          sendTo(playerId, { type: 'POLICE_ACK', targetId: msg.targetId });
+          addLog(`🛡️ The Police has designated a protection target...`);
+          broadcastGameState();
+          break;
+        }
+
+        case 'RPS_CHOICE': {
+          if (gameState.phase !== 'rps') return;
+          const { choice } = msg;
+          const rps = gameState.rpsState;
+          if (!rps || !['rock', 'paper', 'scissors'].includes(choice)) return;
+          if (playerId !== rps.sheriffId && playerId !== rps.killerId) return;
+          rps.choices[playerId] = choice;
+          broadcastGameState();
+          if (rps.choices[rps.sheriffId] && rps.choices[rps.killerId]) {
+            resolveRPS();
+          }
+          break;
+        }
+
+        case 'PLAY_AGAIN': {
+          if (playerId !== gameState.host) return;
+          const oldPlayers = Object.entries(gameState.players).map(([id, p]) => ({ id, name: p.name, ws: p.ws }));
+          const hostId = gameState.host;
+          resetGame();
+          oldPlayers.forEach(({ id, name, ws: pws }) => {
+            const isHost = id === hostId;
+            gameState.players[id] = { id, name, ws: pws, alive: true, ready: false, role: null, eliminated: false };
+            if (isHost) gameState.host = id;
+          });
+          broadcast({ type: 'LOBBY_RESET' });
+          broadcastGameState();
+          break;
+        }
+      }
+    });
   });
 
   ws.on('close', () => {
-    const p = gameState.players[playerId];
-    if (p) {
-      addLog(`🚪 ${p.name} has left town.`);
-      // Remove from pending if in night phase
-      gameState.pendingNightActions.delete(playerId);
-      if (gameState.phase === 'night') checkNightComplete();
-      // If was host, assign new host
-      if (gameState.host === playerId) {
-        const remaining = Object.keys(gameState.players).filter(id => id !== playerId);
-        gameState.host = remaining[0] || null;
+    if (!myRoom || !rooms.has(myRoom.code)) return;
+    withRoom(myRoom, () => {
+      const p = gameState.players[playerId];
+      if (p) {
+        addLog(`🚪 ${p.name} has left town.`);
+        gameState.pendingNightActions.delete(playerId);
+        if (gameState.phase === 'night') checkNightComplete();
+        if (gameState.host === playerId) {
+          const remaining = Object.keys(gameState.players).filter(id => id !== playerId);
+          gameState.host = remaining[0] || null;
+        }
+        delete gameState.players[playerId];
+        broadcast({ type: 'PLAYER_LEFT', playerId, playerName: p.name });
+        broadcastGameState();
       }
-      delete gameState.players[playerId];
-      broadcast({ type: 'PLAYER_LEFT', playerId, playerName: p.name });
-      broadcastGameState();
-    }
-    if (Object.keys(gameState.players).length === 0) {
-      startSessionExpireTimer();
-    }
+      if (Object.keys(gameState.players).length === 0) {
+        startSessionExpireTimer();
+      }
+    });
   });
 
   ws.on('error', (err) => {

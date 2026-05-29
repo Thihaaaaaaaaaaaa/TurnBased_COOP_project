@@ -82,6 +82,14 @@ export const ROLE_INFO = {
 };
 
 export const KILLER_VARIANTS = ['NORMAL_KILLER', 'GEMINI_KILLER', 'BAY_HARBOR'];
+export const DOCTOR_VARIANTS = ['NORMAL_DOCTOR', 'SURGEON', 'POLICE'];
+export const DETECTIVE_VARIANTS = ['NORMAL_DETECTIVE', 'SHERIFF', 'FORENSIC'];
+
+export const CATEGORY_ALL = {
+  killer: KILLER_VARIANTS,
+  doctor: DOCTOR_VARIANTS,
+  detective: DETECTIVE_VARIANTS,
+};
 
 export function getRoleTeam(role) {
   return ROLE_INFO[role]?.team || 'good';

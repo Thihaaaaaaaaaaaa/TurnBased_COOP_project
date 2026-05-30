@@ -470,7 +470,7 @@ function GameLog({ entries }) {
 }
 
 // ─── Chat Panel ────────────────────────────────────────────────────────────────
-function ChatPanel({ chatLog, canGhostChat, canSend, onSend, phase }) {
+function ChatPanel({ chatLog, canGhostChat, canSend, onSend, phase, embedded }) {
   const [text, setText] = useState('');
   const scrollRef = useRef(null);
   useEffect(() => {
@@ -487,10 +487,12 @@ function ChatPanel({ chatLog, canGhostChat, canSend, onSend, phase }) {
   const nightMuted = canSend === false && !canGhostChat;
 
   return (
-    <div className="chat-panel">
-      <div className="chat-header">
-        {canGhostChat ? '👻 GHOST CHATTER' : '💬 TOWN TALK'}
-      </div>
+    <div className={`chat-panel ${embedded ? 'embedded' : ''}`}>
+      {!embedded && (
+        <div className="chat-header">
+          {canGhostChat ? '👻 GHOST CHATTER' : '💬 TOWN TALK'}
+        </div>
+      )}
       <div className="chat-messages" ref={scrollRef}>
         {(chatLog || []).length === 0 && (
           <div className="chat-empty">{canGhostChat ? 'The dead are silent... for now.' : 'No one\'s spoken yet.'}</div>
@@ -515,6 +517,170 @@ function ChatPanel({ chatLog, canGhostChat, canSend, onSend, phase }) {
         />
         <button className="chat-send" onClick={submit} disabled={nightMuted || !text.trim()}>▶</button>
       </div>
+    </div>
+  );
+}
+
+// ─── Game Dock — bottom tabbed area: ACTION | CHAT | LOG ───────────────────────
+function GameDock({
+  phase, isAlive, myRole, players, myId, send,
+  pendingAction, cooldowns, policeTarget, policeCooldownActive,
+  chatLog, canGhostChat, sendChat, gameLog,
+}) {
+  // Default tab based on context
+  const defaultTab = !isAlive ? 'chat' : (phase === 'night' && myRole !== 'CIVILIAN' && pendingAction) ? 'action' : 'chat';
+  const [tab, setTab] = useState(defaultTab);
+
+  // Auto-switch to action tab when night begins and you have a pending action
+  const phaseRef = useRef(phase);
+  useEffect(() => {
+    if (phaseRef.current !== phase) {
+      phaseRef.current = phase;
+      if (phase === 'night' && isAlive && pendingAction) setTab('action');
+      if (phase === 'day' && isAlive && myRole === 'POLICE' && !policeCooldownActive) setTab('action');
+    }
+  }, [phase, isAlive, pendingAction, myRole, policeCooldownActive]);
+
+  const showActionTab =
+    (phase === 'day' && isAlive && myRole === 'POLICE' && !policeCooldownActive) ||
+    (phase === 'night' && isAlive && myRole && myRole !== 'CIVILIAN' && pendingAction);
+
+  return (
+    <div className="game-dock">
+      <div className="dock-tabs">
+        {showActionTab && (
+          <button className={`dock-tab ${tab === 'action' ? 'active' : ''}`} onClick={() => setTab('action')}>
+            ⚡ ACTION
+            {pendingAction && <span className="dock-badge">!</span>}
+          </button>
+        )}
+        <button className={`dock-tab ${tab === 'chat' ? 'active' : ''}`} onClick={() => setTab('chat')}>
+          💬 CHAT
+        </button>
+        <button className={`dock-tab ${tab === 'log' ? 'active' : ''}`} onClick={() => setTab('log')}>
+          📜 LOG
+        </button>
+        <button className={`dock-tab ${tab === 'roster' ? 'active' : ''}`} onClick={() => setTab('roster')}>
+          🤠 POSSE
+        </button>
+      </div>
+      <div className="dock-body">
+        {tab === 'action' && (
+          <DockActionPanel
+            phase={phase} isAlive={isAlive} myRole={myRole} players={players} myId={myId}
+            send={send} pendingAction={pendingAction} cooldowns={cooldowns}
+            policeTarget={policeTarget} policeCooldownActive={policeCooldownActive}
+          />
+        )}
+        {tab === 'chat' && (
+          <ChatPanel
+            chatLog={chatLog}
+            canGhostChat={canGhostChat}
+            canSend={isAlive ? (phase !== 'night') : false}
+            onSend={sendChat}
+            phase={phase}
+            embedded
+          />
+        )}
+        {tab === 'log' && (
+          <div className="dock-log">
+            {(gameLog || []).slice(-30).map((e, i) => (
+              <div key={i} className="log-entry">{e.msg}</div>
+            ))}
+            {(!gameLog || !gameLog.length) && <div className="log-empty">The pages await their ink...</div>}
+          </div>
+        )}
+        {tab === 'roster' && (
+          <div className="dock-roster">
+            <div className="dock-roster-section">
+              <div className="dock-roster-label">ALIVE ({players.filter(p => p.alive).length})</div>
+              {players.filter(p => p.alive).map(p => (
+                <div key={p.id} className={`dock-roster-row ${p.id === myId ? 'is-me' : ''}`}>
+                  🤠 {p.name}
+                  {p.id === myId && <span className="you-tag">YOU</span>}
+                  {p.isHost && <span className="marshal-tag">★</span>}
+                </div>
+              ))}
+            </div>
+            {players.filter(p => !p.alive).length > 0 && (
+              <div className="dock-roster-section">
+                <div className="dock-roster-label dead">DEPARTED ({players.filter(p => !p.alive).length})</div>
+                {players.filter(p => !p.alive).map(p => (
+                  <div key={p.id} className="dock-roster-row dead">
+                    💀 {p.name}
+                    {p.revived && <span className="revived-tag">REVIVED</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Action sub-panel inside dock — embeds existing NightActionPanel or POLICE day action.
+function DockActionPanel({ phase, isAlive, myRole, players, myId, send, pendingAction, cooldowns, policeTarget, policeCooldownActive }) {
+  if (!isAlive) {
+    return (
+      <div className="dock-dead-msg">
+        <span className="dock-dead-icon">⚰️</span>
+        <div className="rye">Yer six feet under, partner.</div>
+        <div className="dock-dead-sub">Talk it over in the ghost channel.</div>
+      </div>
+    );
+  }
+  if (phase === 'night') {
+    if (myRole === 'CIVILIAN') {
+      return (
+        <div className="dock-civ-msg">
+          <span className="dock-civ-icon">🌙</span>
+          <div className="rye">Rest, civilian.</div>
+          <div>Try the revolver to pass time.</div>
+          <RevolverSpinner />
+        </div>
+      );
+    }
+    return (
+      <NightActionPanel
+        myRole={myRole}
+        players={players}
+        myId={myId}
+        onAction={(action) => send({ type: 'NIGHT_ACTION', ...action })}
+        pendingAction={pendingAction}
+        cooldowns={cooldowns}
+        policeTarget={policeTarget}
+        phaseEndsAt={null}
+      />
+    );
+  }
+  if (phase === 'day' && myRole === 'POLICE' && !policeCooldownActive) {
+    // Police day action — embed inline
+    return <PoliceDayAction players={players} myId={myId} send={send} policeTarget={policeTarget} />;
+  }
+  return <div className="dock-civ-msg"><div>Vote on the table during the day, partner.</div></div>;
+}
+
+function PoliceDayAction({ players, myId, send, policeTarget }) {
+  const [selected, setSelected] = useState(null);
+  const alive = players.filter(p => p.alive && p.id !== myId);
+  return (
+    <div className="dock-police">
+      <div className="police-label">🛡️ DESIGNATE TONIGHT'S PROTECTION</div>
+      <div className="player-vote-grid">
+        {alive.map(p => (
+          <button key={p.id}
+            className={`vote-btn ${selected === p.id ? 'voted' : ''}`}
+            onClick={() => setSelected(p.id)}>
+            {p.name}
+          </button>
+        ))}
+      </div>
+      <button className="submit-btn small" onClick={() => selected && send({ type: 'POLICE_DAY_ACTION', targetId: selected })} disabled={!selected}>
+        🛡️ Set Protection
+      </button>
+      {policeTarget && <div className="police-confirm">✓ Protecting: {players.find(p => p.id === policeTarget)?.name}</div>}
     </div>
   );
 }
@@ -628,10 +794,6 @@ function NightActionPanel({ myRole, players, myId, onAction, pendingAction, cool
       <div className="night-panel-header">
         <span style={{ color: info.color, fontSize: '1.4rem' }}>{info.emoji}</span>
         <span className="role-name">{info.label}</span>
-      </div>
-
-      <div className="clock-center-wrap">
-        <BigClock endsAt={phaseEndsAt} totalMs={25000} label="ACT NOW" />
       </div>
 
       {myRole === 'BAY_HARBOR' && (
@@ -1360,155 +1522,95 @@ export default function App() {
       </div>
 
       {/* Saloon scene — animated 2D table view */}
-      <SaloonScene
-        players={players}
-        myId={myId}
-        phase={phase}
-        voteCounts={gameState.voteCounts}
-        myVote={myVote}
-        recentChat={chatLog}
-        rolesByPlayerId={gameState.killerTeam
-          ? Object.fromEntries([
-              ...(gameState.killerTeam || []).map(k => [k.id, 'KILLER_TEAM']),
-              [myId, myRole],
-            ])
-          : { [myId]: myRole }}
-        myRole={myRole}
-        killedThisRound={killedThisRound}
-        onSelectPlayer={(targetId) => {
-          if (targetId === myId) return; // can't act on self in most cases
-          if (phase === 'day') {
-            setMyVote(targetId);
-            send({ type: 'VOTE', targetId });
-            sfx.chime();
+      {/* Main stage: scene fills remaining viewport */}
+      <div className="game-stage">
+        <SaloonScene
+          players={players}
+          myId={myId}
+          phase={phase}
+          voteCounts={gameState.voteCounts}
+          myVote={myVote}
+          recentChat={chatLog}
+          rolesByPlayerId={gameState.killerTeam
+            ? Object.fromEntries([
+                ...(gameState.killerTeam || []).map(k => [k.id, 'KILLER_TEAM']),
+                [myId, myRole],
+              ])
+            : { [myId]: myRole }}
+          myRole={myRole}
+          killedThisRound={killedThisRound}
+          centerSlot={
+            phase === 'day' || phase === 'night' ? (
+              <BigClock
+                endsAt={phaseEndsAt}
+                totalMs={phase === 'day' ? 30000 : 25000}
+                label={phase === 'day' ? 'DISCUSS' : 'ACT'}
+              />
+            ) : null
           }
-        }}
-      />
+          onSelectPlayer={(targetId) => {
+            if (targetId === myId) return;
+            if (phase === 'day') {
+              setMyVote(targetId);
+              send({ type: 'VOTE', targetId });
+              sfx.chime();
+            }
+          }}
+        />
 
-      <div className="game-layout">
-        {/* Left: Players */}
-        <div className="game-left">
-          <div className="section-header">
-            <span>🤠</span>
-            <span>The Town — {alivePlayers.length} alive</span>
+        {/* Skip-vote ribbon at top of stage during day */}
+        {phase === 'day' && isAlive && (
+          <div className="stage-skip-ribbon">
+            <div className="skip-label">SKIP {skipVoteCount}/{skipVoteRequired}</div>
+            <div className="skip-bar-mini">
+              <div className="skip-bar-fill-mini"
+                style={{ width: `${Math.min(100, (skipVoteCount / Math.max(1, skipVoteRequired)) * 100)}%` }} />
+            </div>
+            <button className="skip-btn-mini" onClick={() => send({ type: 'SKIP_VOTE' })}>⏭ SKIP</button>
           </div>
-          <div className="player-grid">
-            {alivePlayers.map(p => (
-              <div key={p.id} className={`player-tag alive ${p.id === myId ? 'is-me' : ''}`}>
-                <span className="player-tag-icon">🤠</span>
-                <span className="player-tag-name">{p.name}</span>
-                {p.id === myId && <span className="you-tag">YOU</span>}
-                {p.isHost && <span className="marshal-tag">★</span>}
+        )}
+
+        {/* Investigate / forensic results — floating overlay */}
+        {investigateResults.length > 0 && (
+          <div className="floating-result investigate-panel animate-paper">
+            <div className="inv-title">🔍 Investigation Report</div>
+            {investigateResults.map((r, i) => (
+              <div key={i} className={`inv-result ${r.team}`}>
+                <span>{ROLE_INFO[r.role]?.emoji}</span>
+                <span className="inv-name">{r.name}</span>
+                <span className="inv-role">{ROLE_INFO[r.role]?.label}</span>
+                <span className="inv-team">{r.team === 'killer' ? '☠️' : '⭐'}</span>
               </div>
             ))}
+            <button className="clear-btn" onClick={() => setInvestigateResults([])}>Burn Evidence</button>
           </div>
-
-          {deadPlayers.length > 0 && (
-            <>
-              <div className="section-header dead-header">
-                <span>💀</span>
-                <span>The Departed</span>
-              </div>
-              <div className="player-grid">
-                {deadPlayers.map(p => (
-                  <div key={p.id} className="player-tag dead">
-                    <span className="player-tag-icon">💀</span>
-                    <span className="player-tag-name">{p.name}</span>
-                    {p.revived && <span className="revived-tag">REVIVED</span>}
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          <GameLog entries={gameLog} />
-
-          <ChatPanel
-            chatLog={chatLog}
-            canGhostChat={canGhostChat}
-            canSend={isAlive ? (phase !== 'night') : false}
-            onSend={sendChat}
-            phase={phase}
-          />
-        </div>
-
-        {/* Right: Actions */}
-        <div className="game-right">
-          {phase === 'day' && isAlive && (
-            <DayVotePanel
-              players={players}
-              myId={myId}
-              myRole={myRole}
-              onVote={(id) => send({ type: 'VOTE', targetId: id })}
-              onSkip={() => send({ type: 'SKIP_VOTE' })}
-              onPoliceAction={(id) => send({ type: 'POLICE_DAY_ACTION', targetId: id })}
-              skipVoteCount={skipVoteCount}
-              skipVoteRequired={skipVoteRequired}
-              votes={gameState.votes}
-              policeTarget={policeTarget}
-              policeCooldownActive={policeCooldownActive}
-              phaseEndsAt={phaseEndsAt}
-            />
-          )}
-
-          {phase === 'night' && isAlive && myRole && myRole !== 'CIVILIAN' && (
-            <NightActionPanel
-              myRole={myRole}
-              players={players}
-              myId={myId}
-              onAction={(action) => send({ type: 'NIGHT_ACTION', ...action })}
-              pendingAction={pendingAction}
-              cooldowns={{ bayHarborCooldownActive, surgeonCooldownActive, policeCooldownActive, forensicUsed }}
-              policeTarget={policeTarget}
-              phaseEndsAt={phaseEndsAt}
-            />
-          )}
-
-          {phase === 'night' && isAlive && myRole === 'CIVILIAN' && (
-            <div className="civilian-night">
-              <div className="clock-center-wrap">
-                <BigClock endsAt={phaseEndsAt} totalMs={25000} label="NIGHT" />
-              </div>
-              <div className="night-waiting-icon">🌙</div>
-              <div className="rye">Rest your weary bones, civilian.</div>
-              <div>The night holds its dark secrets...</div>
-              <RevolverSpinner />
-            </div>
-          )}
-
-          {!isAlive && phase !== 'gameover' && (
-            <div className="dead-observer">
-              <div className="dead-observer-icon">⚰️</div>
-              <div className="rye">Yer Six Feet Under, Partner.</div>
-              <div>Watch the livin' play out their fate from beyond...</div>
-            </div>
-          )}
-
-          {/* Investigate Results */}
-          {investigateResults.length > 0 && (
-            <div className="investigate-panel animate-paper">
-              <div className="inv-title">🔍 Investigation Report</div>
-              {investigateResults.map((r, i) => (
-                <div key={i} className={`inv-result ${r.team}`}>
-                  <span>{ROLE_INFO[r.role]?.emoji}</span>
-                  <span className="inv-name">{r.name}</span>
-                  <span className="inv-role">{ROLE_INFO[r.role]?.label}</span>
-                  <span className="inv-team">{r.team === 'killer' ? '☠️' : '⭐'}</span>
-                </div>
-              ))}
-              <button className="clear-btn" onClick={() => setInvestigateResults([])}>Burn Evidence</button>
-            </div>
-          )}
-
-          {forensicResult && (
-            <div className={`forensic-panel animate-stamp ${forensicResult.correct ? 'correct' : 'wrong'}`}>
-              <div className="rye">🧪 Forensic Report</div>
-              <div>{forensicResult.message}</div>
-              <button className="clear-btn" onClick={() => setForensicResult(null)}>Dismiss</button>
-            </div>
-          )}
-        </div>
+        )}
+        {forensicResult && (
+          <div className={`floating-result forensic-panel animate-stamp ${forensicResult.correct ? 'correct' : 'wrong'}`}>
+            <div className="rye">🧪 Forensic Report</div>
+            <div>{forensicResult.message}</div>
+            <button className="clear-btn" onClick={() => setForensicResult(null)}>Dismiss</button>
+          </div>
+        )}
       </div>
+
+      {/* Bottom dock — tabbed: ACTION | CHAT | LOG */}
+      <GameDock
+        phase={phase}
+        isAlive={isAlive}
+        myRole={myRole}
+        players={players}
+        myId={myId}
+        send={send}
+        pendingAction={pendingAction}
+        cooldowns={{ bayHarborCooldownActive, surgeonCooldownActive, policeCooldownActive, forensicUsed }}
+        policeTarget={policeTarget}
+        policeCooldownActive={policeCooldownActive}
+        chatLog={chatLog}
+        canGhostChat={canGhostChat}
+        sendChat={sendChat}
+        gameLog={gameLog}
+      />
 
       {/* Notifications */}
       {notification && (

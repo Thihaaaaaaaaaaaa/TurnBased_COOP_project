@@ -2782,3 +2782,271 @@
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
 }
+
+/* ═══════════════ FULL-SCREEN GAME LAYOUT ════════════════════════ */
+.game-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+/* Slim header */
+.game-screen .game-header {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+}
+
+/* Stage fills remaining */
+.game-stage {
+  flex: 1 1 auto;
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 8px 8px 0;
+  overflow: hidden;
+}
+
+/* Override saloon-scene sizing for full-stage layout */
+.game-stage .saloon-scene {
+  flex: 1 1 auto;
+  width: 100%;
+  max-height: none;
+  aspect-ratio: auto;
+  margin: 0;
+}
+
+/* Timer on the table */
+.table-center-slot {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.7));
+  z-index: 2;
+}
+.table-center-slot .big-clock {
+  filter: none;
+}
+.table-center-slot .big-clock-svg {
+  width: clamp(140px, 22vmin, 220px);
+  height: clamp(140px, 22vmin, 220px);
+}
+
+/* Skip ribbon on the stage */
+.stage-skip-ribbon {
+  position: absolute;
+  top: 10px; left: 50%;
+  transform: translateX(-50%);
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 14px;
+  background: linear-gradient(135deg, rgba(15,7,0,0.85), rgba(42,26,12,0.7));
+  border: 1px solid var(--gold-deep);
+  border-radius: 20px;
+  font-family: 'Rye', serif;
+  font-size: 0.75rem;
+  color: var(--parchment);
+  letter-spacing: 0.1em;
+  z-index: 10;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.6);
+}
+.skip-bar-mini {
+  width: 80px; height: 6px;
+  background: rgba(0,0,0,0.6);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.skip-bar-fill-mini {
+  height: 100%;
+  background: linear-gradient(90deg, var(--gold-deep), var(--gold-bright));
+  transition: width 0.3s;
+  box-shadow: 0 0 8px var(--gold);
+}
+.skip-btn-mini {
+  padding: 4px 10px;
+  font-family: 'Rye', serif;
+  font-size: 0.7rem;
+  background: var(--blood);
+  color: var(--gold-bright);
+  border: 1px solid var(--gold);
+  letter-spacing: 0.15em;
+  border-radius: 2px;
+  transition: all 0.15s;
+}
+.skip-btn-mini:hover { background: var(--blood-bright); }
+
+/* Floating result overlays (investigation, forensic) */
+.floating-result {
+  position: absolute;
+  top: 70px; right: 14px;
+  max-width: 320px;
+  z-index: 30;
+}
+
+/* ═══════════════ BOTTOM DOCK ════════════════════════ */
+.game-dock {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(180deg, rgba(0,0,0,0.7), rgba(15,7,0,0.9));
+  border-top: 2px solid var(--gold-deep);
+  box-shadow: 0 -4px 16px rgba(0,0,0,0.6);
+  max-height: 38vh;
+  min-height: 180px;
+}
+.dock-tabs {
+  display: flex;
+  background: rgba(0,0,0,0.6);
+  border-bottom: 1px solid var(--gold-deep);
+  flex: 0 0 auto;
+}
+.dock-tab {
+  flex: 1;
+  padding: 10px 8px;
+  background: transparent;
+  border: none;
+  border-right: 1px solid rgba(201,168,76,0.2);
+  color: var(--parchment-dark);
+  font-family: 'Rye', serif;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s;
+}
+.dock-tab:last-child { border-right: none; }
+.dock-tab:hover { color: var(--gold-bright); background: rgba(201,168,76,0.06); }
+.dock-tab.active {
+  color: var(--gold-bright);
+  background: linear-gradient(180deg, rgba(201,168,76,0.15), transparent);
+  text-shadow: 0 0 10px var(--gold);
+}
+.dock-tab.active::after {
+  content: '';
+  position: absolute; bottom: 0; left: 10%; right: 10%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--gold-bright), transparent);
+}
+.dock-badge {
+  display: inline-block;
+  margin-left: 6px;
+  background: var(--blood-fresh);
+  color: var(--gold-bright);
+  font-size: 0.75rem;
+  width: 18px; height: 18px;
+  line-height: 18px;
+  border-radius: 50%;
+  animation: heartbeat 1s ease-in-out infinite;
+}
+.dock-body {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 12px 16px;
+  min-height: 0;
+}
+
+/* Embedded chat — no border / fills dock */
+.chat-panel.embedded {
+  margin-top: 0;
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  max-height: none;
+  height: 100%;
+}
+.chat-panel.embedded .chat-messages { max-height: none; flex: 1; }
+
+/* Dock log */
+.dock-log .log-entry {
+  font-family: 'IM Fell English', serif;
+  font-size: 0.82rem;
+  color: var(--parchment-dark);
+  padding: 4px 0;
+  border-bottom: 1px dashed rgba(201,168,76,0.1);
+  line-height: 1.5;
+}
+.dock-log .log-empty {
+  text-align: center;
+  font-style: italic;
+  color: var(--smoke);
+  padding: 16px;
+}
+
+/* Dock roster */
+.dock-roster {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.dock-roster-section {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.dock-roster-label {
+  font-family: 'Rye', serif;
+  font-size: 0.72rem;
+  color: var(--gold-bright);
+  letter-spacing: 0.2em;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--gold-deep);
+  margin-bottom: 4px;
+}
+.dock-roster-label.dead { color: var(--blood-fresh); border-bottom-color: var(--blood); }
+.dock-roster-row {
+  font-family: 'Special Elite', cursive;
+  font-size: 0.85rem;
+  color: var(--parchment);
+  padding: 4px 8px;
+  background: rgba(15,7,0,0.5);
+  border: 1px solid rgba(201,168,76,0.15);
+  border-radius: 2px;
+  display: flex; align-items: center; gap: 8px;
+}
+.dock-roster-row.is-me { border-color: var(--gold); background: rgba(201,168,76,0.08); }
+.dock-roster-row.dead { color: var(--blood-fresh); opacity: 0.7; text-decoration: line-through; }
+
+/* Dead/civilian dock messages */
+.dock-dead-msg, .dock-civ-msg {
+  text-align: center;
+  padding: 20px;
+  color: var(--parchment-dark);
+}
+.dock-dead-icon, .dock-civ-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 8px;
+  filter: drop-shadow(0 0 16px var(--gold));
+}
+.dock-dead-msg .rye, .dock-civ-msg .rye {
+  color: var(--gold-bright);
+  font-size: 1rem;
+  margin-bottom: 4px;
+  letter-spacing: 0.1em;
+}
+.dock-dead-sub { font-style: italic; font-size: 0.85rem; }
+
+/* Police inline action */
+.dock-police .player-vote-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+
+/* Override night-panel inside dock — it shouldn't have its own background/borders */
+.dock-body .night-panel {
+  background: transparent;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  margin: 0;
+}
+
+/* Tighter responsive sizing */
+@media (max-height: 700px) {
+  .game-dock { max-height: 32vh; min-height: 150px; }
+  .table-center-slot .big-clock-svg { width: clamp(120px, 18vmin, 180px); height: clamp(120px, 18vmin, 180px); }
+}
+@media (max-width: 700px) {
+  .game-screen .game-header { padding: 6px 10px; flex-wrap: wrap; gap: 6px; }
+  .game-title-small { font-size: 1.1rem; }
+  .dock-tab { font-size: 0.7rem; padding: 8px 4px; letter-spacing: 0.05em; }
+  .floating-result { right: 8px; top: 60px; max-width: 260px; }
+  .stage-skip-ribbon { font-size: 0.7rem; padding: 4px 10px; gap: 6px; }
+  .skip-bar-mini { width: 60px; }
+}

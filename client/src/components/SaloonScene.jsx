@@ -21,18 +21,19 @@ function seatPositions(count) {
 }
 
 export function SaloonScene({
-  players,           // [{id, name, alive, isHost, ...}]
+  players,
   myId,
-  phase,             // day | night | rps | gameover
-  voteCounts,        // {playerId: count} — tally only, not voter→target
-  myVote,            // targetId I voted for
-  onSelectPlayer,    // (id) => void
-  selectedId,        // id currently selected for action
-  recentChat,        // [{playerId, msg, channel}] — last messages, shown as bubbles briefly
-  rolesByPlayerId,   // {id: role} — visible roles (usually only self + teammates)
+  phase,
+  voteCounts,
+  myVote,
+  onSelectPlayer,
+  selectedId,
+  recentChat,
+  rolesByPlayerId,
   myRole,
-  acting,            // {[playerId]: true} — players currently performing night actions
-  killedThisRound,   // playerId who just got killed (for death animation flash)
+  acting,
+  killedThisRound,
+  centerSlot,        // React node rendered on the table center (e.g. <BigClock/>)
 }) {
   const positions = useMemo(() => seatPositions(players.length), [players.length]);
   const [bubbles, setBubbles] = useState({}); // playerId -> {text, expiresAt}
@@ -101,9 +102,13 @@ export function SaloonScene({
       {/* The poker table */}
       <div className="poker-table">
         <div className="table-felt">
-          <div className="table-emblem">
-            {phase === 'day' ? '☀' : phase === 'night' ? '🌙' : '⭐'}
-          </div>
+          {centerSlot ? (
+            <div className="table-center-slot">{centerSlot}</div>
+          ) : (
+            <div className="table-emblem">
+              {phase === 'day' ? '☀' : phase === 'night' ? '🌙' : '⭐'}
+            </div>
+          )}
         </div>
         <div className="table-rim" />
       </div>

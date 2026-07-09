@@ -1,65 +1,79 @@
-# ⚔️ The Eternal Quest
+# ⚽ Kickoff Arena
 
-An 8-player real-time **co-op turn-based RPG** for the browser. Upload your photo as your hero portrait, pick one of 8 classes, and fight together through 10 stages (50 battles) to seal the Eternal Rift. Built with Node.js + Express + WebSockets — no database, no build step, deploy in minutes.
+Multiplayer **first-person 3D soccer** in the browser. Node.js + WebSockets on the server, Three.js on the client. Arena-style pitch (walls keep the ball alive), **5 v 5**, 5-minute matches, auto team balancing (11th player is politely turned away).
 
-## ✨ Features
+## Controls
 
-- **8 players, real-time co-op** over WebSockets — shared turn order by Speed.
-- **Photo-as-hero**: each player's uploaded picture (compressed client-side) becomes their portrait.
-- **6-stat system** — STR (physical), DEX (speed/crit/accuracy), INT (magic), VIT (HP/defense), WIS (mana), LUK (crit/rare effects). Combat stats are derived from these.
-- **Rune-Slayer-style class paths** — every class advances **Base → Super (Lv 10) → Ultra (Lv 15)** with branching choices, for 8 base classes and 32 end-game specializations.
-- **63 skills** with physical/magic/heal/buff/debuff types, multi-hit, crit, lifesteal, armor pierce, and status effects (poison, burn, freeze, stun, weaken, vulnerable, shield).
-- **50 unique enemies** across 10 themed stages with distinct mechanics (enrage, thorns, lifesteal, shield, burn, freeze, execute) and a 3-phase final boss, **The Rift Lord**.
-- **Enemy scaling** — both HP **and damage** scale with party size; difficulty ramps hard in the last three stages.
-- **Mana regen each round** so casters stay in the fight.
-- **Big loot pool** — 41 items across 5 rarities (common → legendary): weapons, armor, trinkets, and consumables, with per-player loot choices after each fight.
-- **Sprite-based UI** using a 64px pixel-art icon set, with **CSS combat animations** — attack lunges, hit shakes, cast/slash effect overlays, and floating damage/crit numbers.
-- Party sidebar with live HP/MP bars, your 6-stat panel, battle log, and party chat.
+| Input | Action |
+|---|---|
+| WASD | Move |
+| Mouse | Look / aim |
+| Shift | Sprint (drains stamina, ball knocks on further ahead) |
+| Space | Jump |
+| **LMB tap** | Pass (aim-assisted to the best teammate in your cone) |
+| **LMB hold + release** | Charged shot — longer hold = more power |
+| **A / D while charging** | **Curl the shot** (Magnus effect bends it mid-flight) |
+| **LMB near a loose, airborne ball** | **Bicycle kick / volley** — no possession needed, always violent |
+| **F** (with the ball) | **Rainbow flick** — pop it over a defender; they can't grab it mid-air, you can run onto it |
+| RMB or E | Slide tackle — crawl-flat along the turf; the carrier gets knocked down and the ball pops loose (2s cooldown) |
+| **G** | **Become your team's goalkeeper** (one per team, gold kit, 🧤 tag). Press again to give up the gloves |
+| RMB or E *(as keeper)* | **Dive** (A/D picks the side): catch shots clean in your box, punch clear fast/out-of-box balls, or smother the ball off a carrier's feet — they go down |
+| Tab | Scoreboard (goals / tackles) |
+| Enter | Chat |
 
-## 🚀 Run locally
+## Run locally
 
 ```bash
 npm install
-npm start
-# open http://localhost:3000 in several tabs to simulate multiple players
+npm start          # http://localhost:3000
 ```
 
-Requires Node.js 18+.
+Open two browser windows to test multiplayer.
 
-## ☁️ Deploy on Render
+## Deploy on Render
 
-This repo includes `render.yaml`. On [Render](https://render.com):
+1. Push this folder to a GitHub repo.
+2. Render → **New → Web Service** → connect the repo.
+3. Settings:
+   - **Runtime:** Node
+   - **Build command:** `npm install`
+   - **Start command:** `npm start`
+4. Done. Render sets `PORT` automatically and its proxy supports WebSockets out of the box (the client auto-uses `wss://` on https).
 
-1. Push this folder to a Git repo and create a new **Web Service** from it (or use the Blueprint / `render.yaml`).
-2. Build command: `npm install` — Start command: `npm start`.
-3. Render provides `PORT` automatically; the server reads `process.env.PORT`.
-4. WebSockets work out of the box on Render web services. The client auto-detects `wss://` on HTTPS.
+Note: on the free tier the service sleeps after inactivity — first visitor waits ~30s for spin-up, and everyone shares one instance (that's fine: it's one global match room).
 
-Free plan note: the instance sleeps when idle and game state is in memory, so a cold start resets any in-progress run.
+## Architecture
 
-## 🎮 How to play
+- **Server-authoritative ball** — physics (gravity, bounces, roll friction, Magnus curve), possession, tackles, goals, and match flow all simulated at 30Hz on the server. Clients can't cheat the ball.
+- **Client-authoritative movement** with server-side sanity checks (speed/teleport clamps) — keeps your own movement lag-free.
+- **Interpolation** — remote players and the ball render ~120ms in the past between snapshots, so motion is smooth at any tick rate.
+- **Local prediction for dribbling** — when *you* own the ball it's glued in front of your camera locally (zero-lag feel) while the server keeps the true state.
 
-1. **Upload a portrait** and **choose a class**, enter a name, and join the realm.
-2. In the **lobby**, mark ready; any ready hero can **Begin Quest**.
-3. **Equip** a weapon/armor/trinket from your inventory, then confirm.
-4. **Combat** runs in Speed order. On your turn, use a skill (costs MP), a consumable, or Guard (recovers MP). Watch the enemy's mechanic.
-5. After each win, **claim one loot reward**. After each stage boss, level-ups may trigger a **class advancement** choice (Super at Lv 10, Ultra at Lv 15).
-6. Clear all 10 stages and defeat **The Rift Lord** to win.
+## Your assets
 
-## 🗂️ Project structure
+- `public/assets/FootBall.glb` — your soccer ball model (from SoccerBall.zip), auto-normalized to match physics radius.
+- `public/assets/HumanM_Model.fbx` + `anim_*.fbx` — the Human Basic Motions rig; other players are fully animated (idle / run / sprint / fall) with team-color tinting. If loading ever fails, the game gracefully falls back to capsule players.
+- `football_thingys.blend` — **not included yet**: browsers can't load `.blend`. Open it in Blender → *File → Export → glTF 2.0 (.glb)* → drop it in `public/assets/` and tell me what's in it (stadium? goals? props?) and I'll wire it into the scene.
 
-```
-server.js     — Express + ws server, game loop, turn engine, enemy AI (crash-guarded)
-combat.js     — stat derivation, skill/item resolution, status effects
-content.js    — classes, class paths, skills, items, 10 stages of enemies
-sprites.js    — sprite-sheet index → grid-position helper
-public/
-  index.html  — full client (UI, all phases, sprite rendering, animations)
-  assets/
-    icons64.png — pixel-art icon sheet (16-column grid, 64px cells)
-render.yaml   — Render deployment config
-```
+## Goalkeeper rules
 
-## 🧱 Tech
+- One keeper per team; keepers wear a gold-tinted kit and a 🧤 name tag so teams stay unmistakably red vs blue with the keeper obvious.
+- Inside their own box keepers have longer reach, can pluck high balls out of the air, and carry the ball **in their hands** at chest height.
+- Shots faster than ~28 m/s (or dives outside the box) are **parried/punched clear** instead of caught.
+- Saves are tracked on the Tab scoreboard alongside goals and tackles.
+- No crawl/dive clips exist in the FREE motion pack, so nearby clips are substituted: Fall01 held flat = slide tackle & dive, Jump01-Land = the knockdown collapse. Swap in real clips later by dropping FBX files over `public/assets/anim_*.fbx`.
 
-Vanilla JS client (no framework, no bundler), Node.js server, `ws` for WebSockets, `uuid` for session IDs. State is in memory. Built to be readable and hackable.
+## Discipline & stats
+
+- **Whiffed slides hurt**: miss a tackle and you eat turf for 0.7s — time your slides.
+- **Fouls**: sliding into a player who *doesn't* have the ball takes you both down and gets announced ("FOUL!"). Fouls are tracked server-side.
+- **Assists**: complete a pass to a teammate who scores within 10s and you get the assist — shown in the goal banner and on the Tab scoreboard (interceptions break the chain).
+- **Radar** (bottom-right): live top-down map — red/blue dots, gold-ringed keepers, yellow ball, and your own facing tick. No more getting mugged from behind.
+- **AFK cleanup**: connections silent for 90s are dropped so they don't hog a 5v5 slot.
+- Goals now come with team-colored confetti bursting from the net, and fast shots leave a golden trail.
+
+## Match rules
+
+- Teams auto-balance on join; first touch after kickoff starts play.
+- Goals: ball fully crosses the line inside the mouth, under the bar. Scorer gets credit (own goals stay anonymous).
+- 5:00 matches → full-time banner → auto-restart with fresh scores.

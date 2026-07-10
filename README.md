@@ -1,6 +1,6 @@
 # ⚽ Kickoff Arena
 
-Multiplayer **first-person 3D soccer** in the browser. Node.js + WebSockets on the server, Three.js on the client. Arena-style pitch (walls keep the ball alive), **5 v 5**, 5-minute matches, auto team balancing (11th player is politely turned away).
+Multiplayer **first-person 3D soccer** in the browser. Node.js + WebSockets on the server, Three.js on the client. One global arena — a full-stadium-scale pitch (3x the area of v1), up to **10 v 10**, 5-minute matches with **golden-goal overtime**, penalties, and powerup pads. Auto team balancing; the 21st player is politely turned away.
 
 ## Controls
 
@@ -11,9 +11,14 @@ Multiplayer **first-person 3D soccer** in the browser. Node.js + WebSockets on t
 | Shift | Sprint (drains stamina, ball knocks on further ahead) |
 | Space | Jump |
 | **LMB tap** | Pass (aim-assisted to the best teammate in your cone) |
-| **LMB hold + release** | Charged shot — longer hold = more power |
+| **LMB hold + release** | Charged shot — flies **exactly where you're looking**, longer hold = more power |
 | **A / D while charging** | **Curl the shot** (Magnus effect bends it mid-flight) |
-| **LMB near a loose, airborne ball** | **Bicycle kick / volley** — no possession needed, always violent |
+| **hold C at release** | **Chip / lob** — floats it over the keeper and drops fast |
+| **Space, then LMB** (timed) | **BICYCLE KICK**: face *away* from where you want it to go, jump, click inside the window. A live hitbox tracks the ball for 0.75s — connect and it rockets over your head; miss and you eat turf |
+| **Jump into the ball** | **Header** — if your head meets an airborne ball, it's nodded wherever you're looking |
+| **Q** | **Foot jab** — short poke steal: less range than the slide, **no recoil, no knockdown, 0.8s cooldown** |
+| **R** (with the ball) | **Roulette** — 360° spin, 0.7s of tackle/jab immunity (sliders whiff right through you) |
+| **X** (with the ball) | **Drag-back** — pull it behind you and spin off |
 | **F** (with the ball) | **Rainbow flick** — pop it over a defender; they can't grab it mid-air, you can run onto it |
 | RMB or E | Slide tackle — crawl-flat along the turf; the carrier gets knocked down and the ball pops loose (2s cooldown) |
 | **G** | **Become your team's goalkeeper** (one per team, gold kit, 🧤 tag). Press again to give up the gloves |
@@ -54,6 +59,12 @@ Note: on the free tier the service sleeps after inactivity — first visitor wai
 - `public/assets/FootBall.glb` — your soccer ball model (from SoccerBall.zip), auto-normalized to match physics radius.
 - `public/assets/HumanM_Model.fbx` + `anim_*.fbx` — the Human Basic Motions rig; other players are fully animated (idle / run / sprint / fall) with team-color tinting. If loading ever fails, the game gracefully falls back to capsule players.
 - `football_thingys.blend` — **not included yet**: browsers can't load `.blend`. Open it in Blender → *File → Export → glTF 2.0 (.glb)* → drop it in `public/assets/` and tell me what's in it (stadium? goals? props?) and I'll wire it into the scene.
+
+## Set pieces, overtime & powerups
+
+- **Penalties**: a foul inside the defender's own box awards a penalty — the fouled player takes it alone against the keeper (8s shot clock, nobody else can touch the ball until it's struck; rebounds are live).
+- **Golden goal**: if the clock hits zero level, the match goes to sudden death — clock shows **GG ⚡**, next goal wins.
+- **Powerup pads**: six glowing pads on the pitch — ⚡ **speed** (+35% for 5s), 💥 **power shot** (next strike is supercharged), ∞ **stamina** (6s of free sprint). Pads respawn 20s after pickup with a random type. Visible on the radar.
 
 ## Goalkeeper rules
 

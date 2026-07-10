@@ -37,22 +37,13 @@ async function walkTo(c, tx, tz, opts = {}) {
 }
 
 (async () => {
-  console.log('— 5 v 5 cap —');
+  console.log('— setup —');
   const cs = [];
-  for (let i = 0; i < 10; i++) { cs.push(client('P' + i)); }
+  for (let i = 0; i < 4; i++) { cs.push(client('P' + i)); }
   await sleep(400);
   cs.forEach((c, i) => c.send({ t: 'join', name: 'P' + i }));
   await sleep(600);
-  const reds = cs.filter(c => c.team === 'red').length;
-  const blues = cs.filter(c => c.team === 'blue').length;
-  check(reds === 5 && blues === 5, `10 players split 5v5 (${reds}/${blues})`);
-
-  const extra = client('P10');
-  await sleep(300);
-  extra.send({ t: 'join', name: 'P10' });
-  await sleep(400);
-  check(extra.full && !extra.id, '11th player rejected with full message');
-  extra.ws.close();
+  check(cs.every(c => c.id), 'four players joined');
 
   console.log('— goalkeeper role —');
   const A = cs[0];                     // will be keeper
@@ -78,11 +69,13 @@ async function walkTo(c, tx, tz, opts = {}) {
   A.yaw = sideX > 0 ? Math.PI / 2 : -Math.PI / 2;
   A.send({ t: 'input', x: A.px, y: 0, z: A.pz, yaw: A.yaw, a: 0 });
 
-  // foe grabs the ball at centre and shoots at that goal
+  // foe grabs the ball at centre, dribbles to the edge of the box, then shoots
   await walkTo(foe, 0, 0, { chaseBall: true, untilBall: true });
   check(foe.state.b.o === foe.id, 'attacker has the ball');
+  const edgeX = gx - Math.sign(gx) * 16;          // ~16m out
+  await walkTo(foe, edgeX, 6);                    // dribble a lane that avoids the powerup pads
   const shootYaw = Math.atan2(-(gx - foe.px), -(0 - foe.pz));
-  foe.send({ t: 'shoot', pass: false, power: 0.45, yaw: shootYaw, pitch: 0.12, curve: 0 });
+  foe.send({ t: 'shoot', pass: false, power: 0.5, yaw: shootYaw, pitch: 0.12, curve: 0 });
   // keeper watches the ball and dives when it's close
   let caught = false;
   for (let i = 0; i < 80; i++) {

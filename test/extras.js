@@ -50,7 +50,7 @@ async function walk(c, gxFn, gzFn, opts = {}) {
   await walk(A, () => A.state.b.x, () => A.state.b.z, { untilBall: true });
   check(A.state.b.o === A.id, 'kickoff: Ana took first touch');
   const ownX = A.team === 'red' ? -1 : 1;
-  const clearYaw = Math.atan2(-(ownX * 30 - A.px), -(18 - A.pz));
+  const clearYaw = Math.atan2(-(ownX * (A.field.halfL * 0.7) - A.px), -(18 - A.pz));
   A.send({ t: 'shoot', pass: false, power: 0.35, yaw: clearYaw, pitch: 0.1, curve: 0 });
   await sleep(600);
   check(A.state.ph === 'play', 'phase is play');
@@ -91,9 +91,10 @@ async function walk(c, gxFn, gzFn, opts = {}) {
   // move Ana to the ball (it was cleared into her corner, far from Rival)
   await walk(A, () => A.state.b.x, () => A.state.b.z, { untilBall: true });
   check(A.state.b.o === A.id, 'Ana has the ball');
-  // put Buddy 12m toward the goal Ana attacks
+  // Ana dribbles to midfield (ball follows the carrier), Buddy pushes up near the box
   const atkX = A.team === 'red' ? 1 : -1;
-  await walk(mate, A.px + atkX * 12, A.pz);
+  await walk(A, 0, -6);                              // pass lane well clear of the stunned Rival
+  await walk(mate, atkX * (A.field.halfL - 25), -6);
   // aim pass at Buddy
   const passYaw = Math.atan2(-(mate.px - A.px), -(mate.pz - A.pz));
   A.send({ t: 'shoot', pass: true, power: 0, yaw: passYaw, pitch: 0, curve: 0 });

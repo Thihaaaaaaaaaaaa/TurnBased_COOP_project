@@ -99,18 +99,18 @@
 <div id="join">
   <div class="card">
     <h1><span class="k">KICKOFF</span> <span class="a">ARENA</span></h1>
-    <p class="sub">First-person 5&nbsp;v&nbsp;5, 5-minute matches. Walls keep the ball alive — no throw-ins, no mercy.</p>
+    <p class="sub">First-person, up to 10&nbsp;v&nbsp;10 on a full-size arena pitch. Walls keep the ball alive — no throw-ins, no mercy.</p>
     <input id="name" maxlength="16" placeholder="Your name" autocomplete="off"/>
     <button id="playBtn">ENTER THE PITCH</button>
-    <div class="keys">
-      <b>WASD</b><span>move &nbsp;·&nbsp; <b style="display:inline-block">Shift</b> sprint &nbsp;·&nbsp; <b style="display:inline-block">Space</b> jump</span>
-      <b>LMB</b><span>tap to pass · hold &amp; release to shoot</span>
-      <b>A / D</b><span>while charging — curl the shot</span>
-      <b>LMB ✈</b><span>click near a loose high ball — bicycle kick</span>
-      <b>F</b><span>rainbow flick over defenders</span>
-      <b>RMB / E</b><span>slide tackle — carrier goes down, ball pops loose</span>
-      <b>G</b><span>become your team's <b style="display:inline-block;color:#ffd34d">GOALKEEPER</b> — dive, catch &amp; punch clear</span>
-      <b>Tab</b><span>scoreboard &nbsp;·&nbsp; <b style="display:inline-block">Enter</b> chat &nbsp;·&nbsp; matches are 5 v 5</span>
+    <div class="keys" style="font-size:12px">
+      <b>WASD</b><span>move · <b style="display:inline-block">Shift</b> sprint · <b style="display:inline-block">Space</b> jump (head the ball mid-air!)</span>
+      <b>LMB</b><span>tap = pass · hold = shot (flies where you look) · <b style="display:inline-block">A/D</b> curl · hold <b style="display:inline-block">C</b> = chip</span>
+      <b>Space→LMB</b><span><b style="display:inline-block;color:#ff8a5a">BICYCLE KICK</b>: face AWAY from goal, jump, click in the window — miss and you eat turf</span>
+      <b>Q</b><span>foot jab — short poke steal, no recoil, fast cooldown</span>
+      <b>RMB / E</b><span>slide tackle — big range, carrier goes down (whiff = you go down)</span>
+      <b>F / R / X</b><span>rainbow flick · roulette spin (0.7s tackle-proof) · drag-back</span>
+      <b>G</b><span><b style="display:inline-block;color:#ffd34d">GOALKEEPER</b>: dive, catch, punch · grab glowing pads for powerups</span>
+      <b>Tab</b><span>scoreboard · <b style="display:inline-block">Enter</b> chat · one global arena, up to <b style="display:inline-block">10 v 10</b></span>
     </div>
     <div id="joinStatus"></div>
   </div>
@@ -131,6 +131,8 @@
   <div id="tackleCd" class="ready">TACKLE READY</div>
   <canvas id="radar" width="180" height="122" style="position:absolute;bottom:64px;right:24px;
     background:rgba(6,12,24,.72);border:1px solid var(--line);border-radius:10px"></canvas>
+  <div id="buffHud" style="position:absolute;bottom:60px;left:24px;font:700 12px 'Chivo Mono';
+    letter-spacing:1px;display:flex;gap:8px"></div>
   <div id="gkBadge" style="position:absolute;top:70px;left:50%;transform:translateX(-50%);
     display:none;font:900 13px 'Archivo';font-style:italic;letter-spacing:3px;color:#ffd34d;
     background:var(--panel);border:1px solid rgba(255,211,77,.5);border-radius:8px;padding:6px 14px">
@@ -191,6 +193,19 @@ function connect(name){
         try{ ws.close(); }catch(e){}
         break;
       case 'fx': onFx(m); break;
+      case 'buff': onBuff(m); break;
+      case 'penalty':
+        document.getElementById('bannerBig').textContent = 'PENALTY!';
+        document.getElementById('bannerBig').style.color = m.team==='red'?'var(--red)':'var(--blue)';
+        document.getElementById('bannerSm').textContent = m.taker + ' STEPS UP';
+        showBanner(3000); whistle();
+        break;
+      case 'golden':
+        document.getElementById('bannerBig').textContent = 'GOLDEN GOAL';
+        document.getElementById('bannerBig').style.color = '#ffd34d';
+        document.getElementById('bannerSm').textContent = 'NEXT GOAL WINS';
+        showBanner(4000); whistle();
+        break;
       case 'chat': feed(m.name ? {name:m.name, team:m.team} : null, m.text, m.sys); break;
     }
   };
@@ -223,10 +238,19 @@ function loadAssets(){
 
   const fb = new FBXLoader();
   fb.load('assets/HumanM_Model.fbx', model=>{
+    // --- up-axis fix: some FBX rigs are authored Z-up and render lying flat ---
+    let box = new THREE.Box3().setFromObject(model);
+    let size = box.getSize(new THREE.Vector3());
+    if(size.z > size.y * 1.4){          // "tallest" axis is z => the rig is on its back
+      model.rotation.x = -Math.PI/2;
+      model.updateMatrixWorld(true);
+    }
     // normalize height to ~1.8m regardless of authoring units
-    const box = new THREE.Box3().setFromObject(model);
-    const h = box.getSize(new THREE.Vector3()).y || 1;
-    CHAR.scale = 1.8 / h;
+    box = new THREE.Box3().setFromObject(model);
+    size = box.getSize(new THREE.Vector3());
+    CHAR.scale = 1.8 / (size.y || 1);
+    // ground snap: feet exactly at y=0 (fixes sunk-into-the-turf rigs)
+    CHAR.footOffset = -box.min.y * CHAR.scale;
     model.traverse(o=>{
       if(o.isMesh){ o.castShadow = true; o.frustumCulled = false; }
     });
@@ -263,9 +287,9 @@ function buildScene(){
 
   scene = new THREE.Scene();
   scene.background = new THREE.Color('#0a1428');
-  scene.fog = new THREE.Fog('#0a1428', 60, 220);
+  scene.fog = new THREE.Fog('#0a1428', 90, 420);
 
-  camera = new THREE.PerspectiveCamera(78, innerWidth/innerHeight, .1, 500);
+  camera = new THREE.PerspectiveCamera(78, innerWidth/innerHeight, .1, 900);
   camera.rotation.order = 'YXZ';
 
   scene.add(new THREE.HemisphereLight('#8fb3ff', '#0c2a12', .55));
@@ -335,16 +359,19 @@ function buildPitch(){
   line(lw, W, -FIELD.halfL, 0); line(lw, W, FIELD.halfL, 0);
   line(lw, W, 0, 0); // halfway
   // centre circle
-  const circ = new THREE.Mesh(new THREE.RingGeometry(6-lw, 6, 64), lineMat);
+  const circ = new THREE.Mesh(new THREE.RingGeometry(9-lw, 9, 64), lineMat);
   circ.rotation.x = -Math.PI/2; circ.position.y = .012; scene.add(circ);
   const spot = new THREE.Mesh(new THREE.CircleGeometry(.25, 24), lineMat);
   spot.rotation.x = -Math.PI/2; spot.position.y = .012; scene.add(spot);
-  // penalty boxes
+  // penalty boxes (from server dims)
+  const bd = FIELD.boxDepth || 12, bw = FIELD.boxHalfW || 13;
   for(const s of [-1,1]){
-    const bx = FIELD.halfL - 8;
-    line(lw, 18, s*bx, 0);
-    line(8, lw, s*(FIELD.halfL-4), -9);
-    line(8, lw, s*(FIELD.halfL-4), 9);
+    line(lw, bw*2, s*(FIELD.halfL - bd), 0);
+    line(bd, lw, s*(FIELD.halfL - bd/2), -bw);
+    line(bd, lw, s*(FIELD.halfL - bd/2), bw);
+    // penalty spot
+    const ps = new THREE.Mesh(new THREE.CircleGeometry(.25, 20), lineMat);
+    ps.rotation.x = -Math.PI/2; ps.position.set(s*(FIELD.halfL-9), .012, 0); scene.add(ps);
   }
 }
 
@@ -507,7 +534,8 @@ const GOLD = new THREE.Color('#ffd34d');
 function buildCharInto(r, team, gk){
   const model = SkeletonUtils.clone(CHAR.model);
   model.scale.setScalar(CHAR.scale);
-  model.rotation.y = Math.PI;                 // rig is authored facing +Z; our forward is -Z
+  model.position.y = CHAR.footOffset || 0;    // feet on the grass, not through it
+  model.rotation.y += Math.PI;                // rig is authored facing +Z; our forward is -Z
   const tint = team==='red' ? T.red : T.blue;
   model.traverse(o=>{
     if(o.isMesh){
@@ -558,12 +586,15 @@ const me = {
   tackleAt: -99,
   spectating: false,
 };
-const EYE = 1.7, SPEED = 8, SPRINT = 12.5, JUMP = 7.5, GRAV = -24;
+const EYE = 1.62, SPEED = 8, SPRINT = 12.5, JUMP = 7.5, GRAV = -24;   // eyes at head height of the 1.8m rig
 const keys = {};
 let charging = false, chargeStart = 0, pointerLocked = false, chatOpen = false;
 let curveVal = 0, flipStart = -99;
 let myRole = 'field';                       // mirrors server; 'gk' when I hold the gloves
 let diveStart = -99, diveSide = 0;          // camera roll for my own dives
+let lastJumpAt = -99;                       // bicycle-kick timing window
+let rouStart = -99;                         // roulette camera spin
+const buffs = { speedUntil:0, stamUntil:0, power:false };
 
 function startGame(w){
   document.getElementById('join').style.display = 'none';
@@ -595,8 +626,15 @@ function bindInput(){
     if(!pointerLocked) return;
     if(e.button===0){
       if(!iOwnBall){
-        // no possession: attempt a volley / bicycle kick on a loose airborne ball
-        sendAction({ t:'volley', yaw:me.yaw, pitch:me.pitch, curve:curveVal });
+        // BICYCLE KICK attempt: only inside the timing window after a jump.
+        // Face AWAY from where you want it to go — the kick goes over your head.
+        const tN = performance.now()/1000;
+        const sinceJump = tN - lastJumpAt;
+        if(me.pos.y > 0.12 && sinceJump > 0.08 && sinceJump < 0.65){
+          sendAction({ t:'bicycle', yaw:me.yaw, pitch:me.pitch, curve:curveVal });
+          flipStart = tN;                    // commit to the flip — miss = you eat turf
+          sfxTackle();
+        }
       } else {
         charging = true; chargeStart = performance.now(); curveVal = 0;
       }
@@ -609,7 +647,8 @@ function bindInput(){
       const held = performance.now() - chargeStart;
       const isPass = held < 160;
       const power = Math.min((held-160)/850, 1);
-      sendAction({ t:'shoot', pass:isPass, power: isPass?0:power, yaw: me.yaw, pitch: me.pitch, curve: isPass?0:curveVal });
+      sendAction({ t:'shoot', pass:isPass, power: isPass?0:power, yaw: me.yaw, pitch: me.pitch,
+                    curve: isPass?0:curveVal, chip: !!keys.KeyC && !isPass });
       document.getElementById('power').style.opacity = 0;
       document.getElementById('curl').style.opacity = 0;
     }
@@ -625,6 +664,9 @@ function bindInput(){
     if(e.code==='KeyE') myRole==='gk' ? doDive() : doTackle();
     if(e.code==='KeyF' && iOwnBall) sendAction({ t:'flick' });
     if(e.code==='KeyG') sendAction({ t:'role', gk: myRole!=='gk' });
+    if(e.code==='KeyQ') sendAction({ t:'jab', yaw: me.yaw });
+    if(e.code==='KeyR' && iOwnBall) sendAction({ t:'roulette' });
+    if(e.code==='KeyX' && iOwnBall) sendAction({ t:'dragback' });
     if(e.code==='Tab'){ e.preventDefault(); document.getElementById('board').style.display='block'; }
     if(e.key==='Enter'){ openChat(); }
   });
@@ -691,6 +733,7 @@ setInterval(()=>{
   const moving = keys.KeyW||keys.KeyA||keys.KeyS||keys.KeyD;
   const nowT = performance.now()/1000;
   if(nowT - flipStart < .7) a=5;
+  else if(nowT - rouStart < .45) a=7;
   else if(myRole==='gk' && nowT - diveStart < .6) a=6;
   else if(nowT < me.lungeUntil) a=3;
   else if(nowT < me.stunnedUntil) a=4;
@@ -749,8 +792,20 @@ function onFx(m){
   else if(m.kind==='dive') sfxTackle();
   else if(m.kind==='catch'){ sfxTrap(); if(m.id===myId) sfxGoal(); }
   else if(m.kind==='punch') sfxKick(1.2);
+  else if(m.kind==='jab') sfxTrap();
+  else if(m.kind==='header') sfxKick(.8);
+  else if(m.kind==='roulette'){ sfxTrap(); if(m.id===myId) rouStart = t; }
+  else if(m.kind==='dragback'){ sfxTrap(); if(m.id===myId) flickBump = t; }
+  else if(m.kind==='powershot'){ sfxKick(2); if(m.id===myId) buffs.power = false; }
+  else if(m.kind==='pad'){ blip(880,.15,'triangle',.25); blip(1320,.2,'triangle',.2,.08); }
 }
 let flickBump = -99;
+function onBuff(m){
+  const t = performance.now()/1000;
+  if(m.kind==='speed') buffs.speedUntil = t + m.dur;
+  else if(m.kind==='stamina') buffs.stamUntil = t + m.dur;
+  else if(m.kind==='power') buffs.power = true;
+}
 let bannerTimer = null;
 function showBanner(ms){
   const b = document.getElementById('banner');
@@ -808,6 +863,7 @@ function loop(){
   stepBallRender(t);
   stepConfetti(dt);
   stepTrail(dt);
+  stepPadsRender(t);
   stepRadar();
   stepHud(t);
 
@@ -829,6 +885,13 @@ function loop(){
   // rainbow flick: little hop
   const fb = (t - flickBump) / 0.35;
   if(fb >= 0 && fb < 1) camera.position.y += Math.sin(fb*Math.PI) * .3;
+
+  // roulette: a full 360° spin with the ball glued to you
+  const rp = (t - rouStart) / 0.45;
+  if(rp >= 0 && rp < 1){
+    const ease = rp<.5 ? 2*rp*rp : 1-Math.pow(-2*rp+2,2)/2;
+    camera.rotation.y = me.yaw + ease * Math.PI * 2;
+  }
 
   // goalkeeper dive: drop low + roll into it
   const dv = (t - diveStart) / 0.55;
@@ -868,9 +931,10 @@ function stepLocal(dt, t){
   }
 
   const wantSprint = keys.ShiftLeft && len>0 && me.stamina>4;
-  const spd = wantSprint ? SPRINT : SPEED;
-  if(wantSprint) me.stamina = Math.max(0, me.stamina - 26*dt);
-  else me.stamina = Math.min(100, me.stamina + 16*dt);
+  const spdMul = t < buffs.speedUntil ? 1.35 : 1;         // ⚡ speed pad
+  const spd = (wantSprint ? SPRINT : SPEED) * spdMul;
+  if(wantSprint && t >= buffs.stamUntil) me.stamina = Math.max(0, me.stamina - 26*dt);
+  else if(!wantSprint) me.stamina = Math.min(100, me.stamina + 16*dt);
 
   // horizontal velocity: snappy accel
   const accel = me.onGround ? 60 : 20;
@@ -884,6 +948,7 @@ function stepLocal(dt, t){
   // jump / gravity
   if(me.onGround && keys.Space && !stunned && !lunging && pointerLocked){
     me.vel.y = JUMP; me.onGround = false;
+    lastJumpAt = t;                          // opens the bicycle-kick timing window
   }
   me.vel.y += GRAV*dt;
   me.pos.x += me.vel.x*dt;
@@ -977,6 +1042,9 @@ function stepRemotes(t, dt){
         r.inner.rotation.x = r.spinX;
         r.inner.position.y = .8;
         playAction(r, 'fall', 1.2);
+      } else if(eb.a===7){                            // roulette: spin with the ball
+        r.inner.rotation.y += 14*dt;
+        playAction(r, 'run', 1.2);
       } else if(eb.a===3){                            // slide tackle: crawl-flat along the turf
         playAction(r, 'fall', 1.4);
         r.inner.rotation.x = THREE.MathUtils.lerp(r.inner.rotation.x, -Math.PI/2.3, .3);
@@ -988,6 +1056,7 @@ function stepRemotes(t, dt){
         r.inner.position.y = 0;
       } else {
         r.spinX = 0;
+        r.inner.rotation.y = 0;
         r.inner.rotation.x = THREE.MathUtils.lerp(r.inner.rotation.x, 0, .25);
         r.inner.rotation.z = THREE.MathUtils.lerp(r.inner.rotation.z, 0, .25);
         r.inner.position.y = THREE.MathUtils.lerp(r.inner.position.y, 0, .25);
@@ -1038,8 +1107,11 @@ function stepHud(t){
     const m = latestState;
     document.getElementById('sRed').textContent = m.sc.red;
     document.getElementById('sBlue').textContent = m.sc.blue;
-    const mm = Math.floor(m.ck/60), ss = String(m.ck%60).padStart(2,'0');
-    document.getElementById('clock').textContent = `${mm}:${ss}`;
+    if(m.gg){ document.getElementById('clock').textContent = 'GG ⚡'; }
+    else {
+      const mm = Math.floor(m.ck/60), ss = String(m.ck%60).padStart(2,'0');
+      document.getElementById('clock').textContent = `${mm}:${ss}`;
+    }
     // scoreboard table
     if(document.getElementById('board').style.display==='block'){
       const tb = document.getElementById('boardBody');
@@ -1063,6 +1135,14 @@ function stepHud(t){
       }
     }
   }
+  // active buffs
+  const bh = document.getElementById('buffHud');
+  const chips = [];
+  if(t < buffs.speedUntil) chips.push(`<span style="color:#57e389;background:var(--panel);border:1px solid rgba(87,227,137,.4);border-radius:6px;padding:4px 8px">⚡ SPEED ${(buffs.speedUntil-t).toFixed(0)}s</span>`);
+  if(t < buffs.stamUntil) chips.push(`<span style="color:#4de3ff;background:var(--panel);border:1px solid rgba(77,227,255,.4);border-radius:6px;padding:4px 8px">∞ STAMINA ${(buffs.stamUntil-t).toFixed(0)}s</span>`);
+  if(buffs.power) chips.push(`<span style="color:#ff8a5a;background:var(--panel);border:1px solid rgba(255,138,90,.4);border-radius:6px;padding:4px 8px">💥 POWER SHOT</span>`);
+  bh.innerHTML = chips.join('');
+
   document.getElementById('possess').style.opacity = iOwnBall ? 1 : 0;
   document.getElementById('stamFill').style.width = me.stamina + '%';
   document.getElementById('stamFill').style.background = me.stamina<25 ? '#ff8a5a' : '#57e389';
@@ -1165,6 +1245,43 @@ function stepTrail(dt){
   lastTrailPos = p.clone();
 }
 
+// ================= powerup pads =================
+const PAD_COLORS = { speed:'#57e389', power:'#ff8a5a', stamina:'#4de3ff' };
+let padMeshes = null;
+function stepPadsRender(t){
+  if(!latestState || !latestState.pd || !scene) return;
+  if(!padMeshes){
+    padMeshes = latestState.pd.map(pd=>{
+      const grp = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(1.1, .09, 10, 32),
+        new THREE.MeshBasicMaterial({ color:'#fff' })
+      );
+      ring.rotation.x = Math.PI/2; ring.position.y = .12; grp.add(ring);
+      const beam = new THREE.Mesh(
+        new THREE.CylinderGeometry(.55, .8, 3.4, 12, 1, true),
+        new THREE.MeshBasicMaterial({ color:'#fff', transparent:true, opacity:.16, side:THREE.DoubleSide, depthWrite:false })
+      );
+      beam.position.y = 1.7; grp.add(beam);
+      grp.position.set(pd.x, 0, pd.z);
+      scene.add(grp);
+      return { grp, ring, beam };
+    });
+  }
+  latestState.pd.forEach((pd, i)=>{
+    const m = padMeshes[i];
+    const on = pd.k !== 0;
+    m.grp.visible = on;
+    if(on){
+      const col = PAD_COLORS[pd.k] || '#fff';
+      m.ring.material.color.set(col);
+      m.beam.material.color.set(col);
+      m.grp.rotation.y = t*1.2;
+      m.ring.position.y = .12 + Math.sin(t*2.4)*.06;
+    }
+  });
+}
+
 // ================= radar =================
 function stepRadar(){
   const cv = document.getElementById('radar');
@@ -1196,6 +1313,12 @@ function stepRadar(){
       g.beginPath(); g.moveTo(X(e.x), Z(e.z));
       g.lineTo(X(e.x)+f.x*8, Z(e.z)+f.z*8); g.stroke();
     }
+  }
+  // pads
+  if(latestState.pd) for(const pd of latestState.pd){
+    if(pd.k===0) continue;
+    g.fillStyle = PAD_COLORS[pd.k] || '#fff';
+    g.fillRect(X(pd.x)-2, Z(pd.z)-2, 4, 4);
   }
   // ball
   const b = latestState.b;

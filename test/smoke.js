@@ -36,7 +36,7 @@ function check(cond, label) {
   console.log('— possession —');
   const meA = A.state.p.find(p => p.i === A.id);
   let ax = meA.x, az = meA.z;
-  for (let i = 0; i < 40; i++) {
+  for (let i = 0; i < 100; i++) {
     const dx = 0 - ax, dz = 0 - az, d = Math.hypot(dx, dz);
     if (d < 0.5) break;
     const st = Math.min(0.55, d);
@@ -77,8 +77,8 @@ function check(cond, label) {
     // aim from current pos to goal centre
     const gx = A.team === 'red' ? A.field.halfL + 1 : -A.field.halfL - 1;
     const yaw = Math.atan2(-(gx - ax), -(0 - az)); // forward=(-sin,-cos)
-    A.send({ t: 'shoot', pass: false, power: 1, yaw, pitch: 0.05, curve: 0 });
-    await sleep(1800);
+    A.send({ t: 'shoot', pass: false, power: 1, yaw, pitch: 0.08, curve: 0 });
+    await sleep(5000);
   }
   const scored = A.state.sc.red + A.state.sc.blue >= 1;
   check(scored, `goal registered (score ${A.state.sc.red}-${A.state.sc.blue})`);
@@ -146,18 +146,13 @@ function check(cond, label) {
   await sleep(150);
   check(A.state.b.o === null && A.state.b.y > 0.6, `flick popped ball up (y=${A.state.b.y})`);
   check(A.events.some(e => e.t === 'fx' && e.kind === 'flick'), 'flick fx broadcast');
-  // volley it while it's airborne
-  let volleyOk = false;
-  for (let i = 0; i < 20; i++) {
-    if (A.state.b.y > 0.8 && A.state.b.o === null) {
-      A.send({ t: 'volley', yaw: 0, pitch: 0.4, curve: 0 });
-      await sleep(120);
-      const sp = Math.hypot(A.state.b.x, A.state.b.z); // it should be flying somewhere fast
-      if (A.events.some(e => e.t === 'fx' && e.kind === 'bicycle')) { volleyOk = true; break; }
-    }
-    await sleep(60);
-  }
-  check(volleyOk, 'bicycle volley connected on airborne ball');
+  // missed bicycle: attempt with the ball far away -> you eat turf
+  await sleep(1200);
+  A.events.length = 0;
+  A.send({ t: 'bicycle', yaw: 0, pitch: 0.3, curve: 0 });
+  await sleep(1100);
+  const missStun = A.events.find(e => e.t === 'stunned' && /bicycle/.test(e.by || ''));
+  check(!!missStun, 'missed bicycle kick leaves you on the turf');
 
   console.log(`\n${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);

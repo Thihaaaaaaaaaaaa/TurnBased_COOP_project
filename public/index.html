@@ -99,7 +99,7 @@
 <div id="join">
   <div class="card">
     <h1><span class="k">KICKOFF</span> <span class="a">ARENA</span></h1>
-    <p class="sub">First-person, up to 10&nbsp;v&nbsp;10 on a full-size arena pitch. Walls keep the ball alive — no throw-ins, no mercy.</p>
+    <p class="sub">First-person, up to 10&nbsp;v&nbsp;10 on a full-size arena pitch. Walls keep the ball alive — no throw-ins, no mercy. <span style="opacity:.45;font-size:11px">build v6-rigfix</span></p>
     <input id="name" maxlength="16" placeholder="Your name" autocomplete="off"/>
     <button id="playBtn">ENTER THE PITCH</button>
     <div class="keys" style="font-size:12px">
@@ -213,6 +213,8 @@ function connect(name){
 function status(s){ document.getElementById('joinStatus').textContent = s; }
 
 // ---------- uploaded assets: ball model + animated character ----------
+const BUILD = 'v6-rigfix';
+console.log('%cKickoff Arena ' + BUILD, 'color:#57e389;font-weight:bold');
 const CHAR = { ready:false, model:null, clips:{}, scale:1 };
 let ballModel = null;
 
@@ -238,23 +240,39 @@ function loadAssets(){
 
   const fb = new FBXLoader();
   fb.load('assets/HumanM_Model.fbx', model=>{
+   try{
+    // All corrections live on a WRAPPER group. Animation clips can (and do)
+    // write position/rotation/scale onto the rig's own root node every frame,
+    // which silently wipes any fix applied there — the model ends up giant,
+    // lying down, or seemingly "not loaded". The wrapper is untouchable.
     // --- up-axis fix: some FBX rigs are authored Z-up and render lying flat ---
     let box = new THREE.Box3().setFromObject(model);
     let size = box.getSize(new THREE.Vector3());
+    const wrap = new THREE.Group();
+    wrap.name = 'rigFix';
     if(size.z > size.y * 1.4){          // "tallest" axis is z => the rig is on its back
-      model.rotation.x = -Math.PI/2;
-      model.updateMatrixWorld(true);
+      wrap.rotation.x = Math.PI/2;      // (+90°: this pack's up axis is -Z — was upside down at -90°)
     }
+    wrap.add(model);
+    wrap.updateMatrixWorld(true);
     // normalize height to ~1.8m regardless of authoring units
-    box = new THREE.Box3().setFromObject(model);
+    box = new THREE.Box3().setFromObject(wrap);
     size = box.getSize(new THREE.Vector3());
     CHAR.scale = 1.8 / (size.y || 1);
+    wrap.scale.setScalar(CHAR.scale);
+    wrap.updateMatrixWorld(true);
     // ground snap: feet exactly at y=0 (fixes sunk-into-the-turf rigs)
-    CHAR.footOffset = -box.min.y * CHAR.scale;
+    box = new THREE.Box3().setFromObject(wrap);
+    wrap.position.y = -box.min.y;
     model.traverse(o=>{
       if(o.isMesh){ o.castShadow = true; o.frustumCulled = false; }
     });
-    CHAR.model = model;
+    CHAR.model = wrap;
+   }catch(err){
+    console.error('rig setup failed:', err);
+    CHAR.failed = true;
+    try{ feed('SYSTEM', '⚠ character rig setup failed — using capsule players ('+err.message+')', true); }catch(_){}
+   }
     const anims = [
       ['idle','assets/anim_idle.fbx'],
       ['run','assets/anim_run.fbx'],
@@ -266,11 +284,31 @@ function loadAssets(){
     let left = anims.length;
     for(const [key,url] of anims){
       fb.load(url, a=>{
-        if(a.animations && a.animations.length) CHAR.clips[key] = a.animations[0];
-        if(--left===0 && CHAR.clips.idle && CHAR.clips.run) CHAR.ready = true;
-      }, undefined, ()=>{ if(--left===0 && CHAR.clips.idle && CHAR.clips.run) CHAR.ready = true; });
+        if(a.animations && a.animations.length){
+          const clip = a.animations[0];
+          // scale tracks in these packs snap the rig back to raw FBX units (100x) — strip them
+          clip.tracks = clip.tracks.filter(tr => !tr.name.endsWith('.scale'));
+          CHAR.clips[key] = clip;
+        }
+        if(--left===0) finishRig();
+      }, undefined, ()=>{ if(--left===0) finishRig(); });
     }
-  }, undefined, ()=>{ /* capsule fallback stays */ });
+    function finishRig(){
+      if(!CHAR.failed && CHAR.model && CHAR.clips.idle && CHAR.clips.run){
+        CHAR.ready = true;
+        console.log('character rig ready');
+        try{ feed('SYSTEM', 'build ' + BUILD + ' — character rig loaded ✓', true); }catch(_){}
+      } else {
+        CHAR.failed = true;
+        try{ feed('SYSTEM', '⚠ character animations missing — using capsule players', true); }catch(_){}
+      }
+    }
+  }, undefined, err=>{
+    // model file failed to fetch/parse — say so loudly and keep the capsules
+    console.error('HumanM_Model.fbx failed to load:', err);
+    CHAR.failed = true;
+    try{ feed('SYSTEM', '⚠ character model failed to load — using capsule players', true); }catch(_){}
+  });
 }
 
 
@@ -508,9 +546,17 @@ function makeRemote(e){
   );
   ring.rotation.x = -Math.PI/2; ring.position.y = .03; grp.add(ring);
 
+  let rigOk = false;
   if(CHAR.ready){
-    buildCharInto(r, e.tm, e.r===1);
-  } else {
+    try{ buildCharInto(r, e.tm, e.r===1); rigOk = true; }
+    catch(err){
+      console.error('buildCharInto failed:', err);
+      CHAR.failed = true; CHAR.ready = false;   // stop retrying a broken rig
+      if(r.inner){ r.grp.remove(r.inner); r.inner = null; r.mixer = null; }
+      try{ feed('SYSTEM', '⚠ rig build failed — capsule players ('+err.message+')', true); }catch(_){}
+    }
+  }
+  if(!rigOk){
     // capsule fallback until (or in case) the rig loads
     const col = e.tm==='red' ? T.red : T.blue;
     const body = new THREE.Mesh(
@@ -524,6 +570,7 @@ function makeRemote(e){
     );
     head.position.y = 1.95; grp.add(head);
     r.body = body;
+    r.simple = true;
   }
   tag.position.y = 2.5; grp.add(tag);
   scene.add(grp);
@@ -532,10 +579,11 @@ function makeRemote(e){
 
 const GOLD = new THREE.Color('#ffd34d');
 function buildCharInto(r, team, gk){
-  const model = SkeletonUtils.clone(CHAR.model);
-  model.scale.setScalar(CHAR.scale);
-  model.position.y = CHAR.footOffset || 0;    // feet on the grass, not through it
-  model.rotation.y += Math.PI;                // rig is authored facing +Z; our forward is -Z
+  const wrap = SkeletonUtils.clone(CHAR.model);      // wrapper carries axis/scale/ground fixes
+  const facing = new THREE.Group();
+  facing.rotation.y = Math.PI;                       // rig is authored facing +Z; our forward is -Z
+  facing.add(wrap);
+  const model = facing;
   const tint = team==='red' ? T.red : T.blue;
   model.traverse(o=>{
     if(o.isMesh){

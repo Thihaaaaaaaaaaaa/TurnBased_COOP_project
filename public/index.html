@@ -249,7 +249,7 @@ function loadAssets(){
     const wrap = new THREE.Group();
     wrap.name = 'rigFix';
     if(size.z > size.y * 1.4){          // "tallest" axis is z => the rig is on its back
-      wrap.rotation.x = -Math.PI/2;
+      wrap.rotation.x = Math.PI/2;      // (+90°: this pack's up axis is -Z — was upside down at -90°)
     }
     wrap.add(model);
     wrap.updateMatrixWorld(true);

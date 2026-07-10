@@ -99,7 +99,7 @@
 <div id="join">
   <div class="card">
     <h1><span class="k">KICKOFF</span> <span class="a">ARENA</span></h1>
-    <p class="sub">First-person, up to 10&nbsp;v&nbsp;10 on a full-size arena pitch. Walls keep the ball alive — no throw-ins, no mercy.</p>
+    <p class="sub">First-person, up to 10&nbsp;v&nbsp;10 on a full-size arena pitch. Walls keep the ball alive — no throw-ins, no mercy. <span style="opacity:.45;font-size:11px">build v6-rigfix</span></p>
     <input id="name" maxlength="16" placeholder="Your name" autocomplete="off"/>
     <button id="playBtn">ENTER THE PITCH</button>
     <div class="keys" style="font-size:12px">
@@ -213,6 +213,8 @@ function connect(name){
 function status(s){ document.getElementById('joinStatus').textContent = s; }
 
 // ---------- uploaded assets: ball model + animated character ----------
+const BUILD = 'v6-rigfix';
+console.log('%cKickoff Arena ' + BUILD, 'color:#57e389;font-weight:bold');
 const CHAR = { ready:false, model:null, clips:{}, scale:1 };
 let ballModel = null;
 
@@ -295,6 +297,7 @@ function loadAssets(){
       if(!CHAR.failed && CHAR.model && CHAR.clips.idle && CHAR.clips.run){
         CHAR.ready = true;
         console.log('character rig ready');
+        try{ feed('SYSTEM', 'build ' + BUILD + ' — character rig loaded ✓', true); }catch(_){}
       } else {
         CHAR.failed = true;
         try{ feed('SYSTEM', '⚠ character animations missing — using capsule players', true); }catch(_){}

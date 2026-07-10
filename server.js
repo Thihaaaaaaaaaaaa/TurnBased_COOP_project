@@ -1,332 +1,922 @@
-'use strict';
-const http=require('http'); const path=require('path');
-const { v4:uuidv4 }=require('uuid');
-const express=require('express');
-const { WebSocketServer, WebSocket }=require('ws');
-const { derive, SKILLS, CLASSES, SECRET_CLASSES, ITEMS, LOOT_RARITY, STAGES }=require('./content');
-const C=require('./combat');
+// ============================================================
+//  KICKOFF ARENA — authoritative soccer server
+//  Express serves the client, ws runs the match.
+// ============================================================
+const express = require('express');
+const http = require('http');
+const path = require('path');
+const { WebSocketServer } = require('ws');
 
-// ── crash guards: never let one error kill the process ──
-process.on('uncaughtException',e=>{ console.error('[uncaught]',e&&e.stack||e); });
-process.on('unhandledRejection',e=>{ console.error('[unhandled]',e&&e.stack||e); });
+const app = express();
+app.use(express.static(path.join(__dirname, 'public')));
+app.get('/healthz', (_, res) => res.send('ok'));
 
-const app=express(); const server=http.createServer(app);
-const wss=new WebSocketServer({ server });
-const PORT=process.env.PORT||3000;
-const MAX=8, TTL=20*60*1000;
+const server = http.createServer(app);
+const wss = new WebSocketServer({ server });
 
-const sessions=new Map(); // sid -> {ws,player,lastSeen}
-const world={ phase:'lobby', stageIdx:0, roundIdx:0, enemy:null, turnOrder:[], turnPtr:0,
-  log:[], chat:[], lootOffers:{}, lootPicked:{}, equipReady:{}, classChoice:{}, roundActive:false };
+// ---------- constants ----------
+const TICK_HZ = 30;
+const DT = 1 / TICK_HZ;
 
-function broadcast(){ let snap; try{ snap=JSON.stringify(snapshot()); }catch(e){ console.error('snapshot',e); return; }
-  for(const s of sessions.values()) if(s.ws.readyState===WebSocket.OPEN){ try{s.ws.send(snap);}catch(e){} } }
-function sendTo(ws,d){ try{ if(ws&&ws.readyState===WebSocket.OPEN) ws.send(JSON.stringify(d)); }catch(e){} }
-function joined(){ return [...sessions.entries()].filter(([,s])=>s.player); }
-function alive(){ return joined().filter(([,s])=>s.player.hp>0); }
-function plog(m,t='system'){ world.log.push({msg:m,type:t,ts:Date.now()}); if(world.log.length>140) world.log.shift(); }
+const FIELD = {
+  halfL: 60,        // x: -60 .. 60  (3x the area of the old pitch — real-stadium scale)
+  halfW: 38,        // z: -38 .. 38
+  goalHalfW: 5.5,   // goal mouth half width (z)
+  goalH: 3.5,       // crossbar height
+  goalDepth: 3.5,   // net depth behind the line
+  wallH: 7,         // arena wall height (ball bounces back in)
+  boxDepth: 12,     // penalty box depth
+  boxHalfW: 13,     // penalty box half width
+};
 
-// classNode + display name/sprite for a player
-function nodeOf(p){ return C.classNode(p)||CLASSES[p.cls]||SECRET_CLASSES[p.cls]||{name:p.cls,sprite:1920}; }
+const BALL = {
+  r: 0.45,
+  gravity: -22,
+  groundRest: 0.62,
+  wallRest: 0.72,
+  rollFriction: 0.985,   // per-tick multiplier while rolling
+  airDrag: 0.997,
+  pickupRange: 2.0,
+  carryDist: 1.5,
+};
 
-function pubPlayer(sid,s){
-  const p=s.player; const st=C.stats(p); const node=nodeOf(p); const core=C.coreStats(p);
-  return { id:sid, name:p.name, cls:p.cls, tier:p.tier, level:p.level, xp:p.xp,
-    className:node.name, sprite:node.sprite, portrait:p.portrait,
-    hp:p.hp, maxHp:st.maxHp, mp:p.mp, maxMp:st.maxMp,
-    patk:st.patk, matk:st.matk, def:st.def, spd:st.spd,
-    crit:Math.round(st.crit*100), core,
-    alive:p.hp>0, ready:p.ready,
-    skills:liveSkills(p),
-    equip:p.equip, inventory:p.inventory,
-    status:(p.status||[]).map(x=>({type:x.type,rounds:x.rounds,power:x.power})),
-    buffs:(p.buffs||[]).map(b=>({buff:b.buff,rounds:b.rounds})),
-    equipReady:!!world.equipReady[sid], lootPicked:!!world.lootPicked[sid],
-    pendingChoice: pendingClassChoice(p),
-  };
+const PLAYER = {
+  headRange: 1.15,        // 3D reach of a header
+  headCooldown: 0.5,
+  radius: 0.6,
+  maxStep: 0.9,          // max distance a client may move per input packet (anti-teleport, generous for sprint+lunge)
+  tackleRange: 4.4,
+  tackleCos: 0.34,  // ~70° either side — a proper scythe
+  tackleCooldown: 2.0,
+  stunTime: 1.2,
+  shootLockout: 0.45,    // shooter can't instantly re-grab
+};
+
+const TEAM_MAX = 10;           // 10 v 10, one global arena
+
+const JAB = {
+  range: 1.9,
+  cos: Math.cos((50 * Math.PI) / 180),
+  cooldown: 0.8,          // fast poke, no recoil
+};
+
+const PADS_DEF = [
+  { x: 28, z: 0 }, { x: -28, z: 0 }, { x: 0, z: 24 }, { x: 0, z: -24 },
+  { x: 44, z: 18 }, { x: -44, z: -18 },
+];
+const PAD_KINDS = ['speed', 'power', 'stamina'];
+const PAD_RESPAWN = 20;
+
+const GK = {
+  catchRange: 3.2,        // hands beat feet inside the box
+  catchMaxY: 2.6,         // can pluck crosses out of the air
+  diveRange: 3.8,
+  diveCooldown: 1.6,
+  parrySpeed: 28,         // shots faster than this get parried, not caught
+};
+
+const MATCH_LEN = +process.env.MATCH_LEN || 5 * 60;   // seconds (env override for tests)
+const GOAL_PAUSE = 4;          // celebration seconds
+const KICKOFF_PAUSE = 2;
+const MATCH_END_PAUSE = 10;
+
+// ---------- state ----------
+let nextId = 1;
+const players = new Map();     // id -> player
+const sockets = new Map();     // id -> ws
+
+const game = {
+  phase: 'kickoff',            // kickoff | play | goal | matchEnd
+  phaseT: KICKOFF_PAUSE,
+  clock: MATCH_LEN,
+  score: { red: 0, blue: 0 },
+  lastScorer: null,
+  golden: false,
+  penalty: null,          // { team, takerId }
+  pads: PADS_DEF.map((p, i) => ({
+    i, x: p.x, z: p.z, k: PAD_KINDS[i % PAD_KINDS.length], active: true, respawnAt: 0,
+  })),
+  ball: resetBall(),
+};
+
+function startPenalty(team, takerId) {
+  const taker = players.get(takerId);
+  if (!taker) return;
+  game.phase = 'penalty';
+  game.phaseT = 8;                       // shot clock
+  game.penalty = { team, takerId };
+  const atk = team === 'red' ? 1 : -1;   // red attacks +x
+  const spotX = atk * (FIELD.halfL - 9);
+  const b = game.ball;
+  b.vx = b.vy = b.vz = 0; b.spin = 0; b.noPickup = {}; b.passFrom = null; b.assistFrom = null;
+  b.owner = takerId;
+  taker.forceSpawn = { x: spotX - atk * 2, z: 0 };
+  taker.x = spotX - atk * 2; taker.z = 0; taker.stunUntil = 0;
+  // everyone else clears the box: defending keeper to the line, the rest to their shape
+  let ri = 0, bi = 0;
+  for (const p of players.values()) {
+    if (p.id === takerId) continue;
+    p.stunUntil = 0;
+    if (p.role === 'gk' && p.team !== team) {
+      const gl = { x: -atk * -1 * 0, z: 0 };   // placeholder, set below
+      p.forceSpawn = { x: atk * (FIELD.halfL - 1), z: 0 };
+      p.x = p.forceSpawn.x; p.z = 0;
+    } else {
+      const idx = p.team === 'red' ? ri++ : bi++;
+      const sp = spawnPoint(p.team, idx, p.role);
+      p.forceSpawn = sp; p.x = sp.x; p.z = sp.z;
+    }
+  }
+  broadcast({ t: 'penalty', team, taker: taker.name });
 }
 
-// what skills a player currently has (base + super + ultra as unlocked)
-function liveSkills(p){
-  const base=CLASSES[p.cls]||SECRET_CLASSES[p.cls]; if(!base) return ['basic'];
-  let ids=['basic',...(base.skills||[])];
-  if(p.tier>=1 && base.supers && base.supers[p.superKey]) ids.push(...base.supers[p.superKey].skills);
-  if(p.tier>=2 && base.supers && base.supers[p.superKey] && base.supers[p.superKey].ultras[p.ultraKey]) ids.push(...base.supers[p.superKey].ultras[p.ultraKey].skills);
-  return [...new Set(ids)];
+function resetBall() {
+  return { x: 0, y: BALL.r, z: 0, vx: 0, vy: 0, vz: 0, spin: 0, owner: null, noPickup: {} };
 }
 
-// does this player owe a class choice now? returns {type:'super'|'ultra', options:[...]} or null
-function pendingClassChoice(p){
-  const base=CLASSES[p.cls]; if(!base||!base.supers) return null;
-  // Level 10 -> choose Super class; Level 15 -> choose Ultra class.
-  if(p.level>=10 && p.tier<1){
-    return { type:'super', options:Object.entries(base.supers).map(([k,v])=>({key:k,name:v.name,sprite:v.sprite,skills:v.skills.map(id=>SKILLS[id]&&SKILLS[id].name).filter(Boolean)})) };
-  }
-  if(p.level>=15 && p.tier===1 && base.supers[p.superKey]){
-    const ult=base.supers[p.superKey].ultras||[];
-    return { type:'ultra', options:ult.map((u,i)=>({key:i,name:u.name,sprite:u.sprite,skills:u.skills.map(id=>SKILLS[id]&&SKILLS[id].name).filter(Boolean)})) };
-  }
+function teamCounts() {
+  let red = 0, blue = 0;
+  for (const p of players.values()) p.team === 'red' ? red++ : blue++;
+  return { red, blue };
+}
+
+function spawnPoint(team, idx, role) {
+  const sideX = team === 'red' ? -1 : 1;
+  if (role === 'gk') return { x: sideX * (FIELD.halfL - 2.5), z: 0 };
+  const lanes = [-20, 20, -7, 7, -30, 30, 0, -13, 13, -26, 26];
+  const z = lanes[idx % lanes.length];
+  const x = sideX * (16 + 10 * Math.floor(idx / lanes.length));
+  return { x, z };
+}
+
+function teamGk(team) {
+  for (const p of players.values()) if (p.team === team && p.role === 'gk') return p;
   return null;
 }
 
-function snapshot(){
-  const players=joined().map(([sid,s])=>pubPlayer(sid,s));
-  const stage=STAGES[world.stageIdx];
-  return { type:'state',
-    world:{ phase:world.phase, stageIdx:world.stageIdx, roundIdx:world.roundIdx,
-      stageName:stage?stage.name:'', stageEmoji:stage?stage.emoji:'', stageIntro:stage?stage.intro:'', stageSprite:stage?stage.sprite:0,
-      totalStages:STAGES.length, roundsPerStage:stage?stage.rounds.length:5,
-      enemy: world.enemy?{ name:world.enemy.name, sprite:world.enemy.sprite, hp:world.enemy.hp, maxHp:world.enemy.maxHp,
-        mechanic:world.enemy.mechanic, mechanicDesc:world.enemy.mechanicDesc, boss:world.enemy.boss, phase:world.enemy.phaseLabel||null,
-        status:(world.enemy.status||[]).map(x=>({type:x.type,rounds:x.rounds,power:x.power})) }:null,
-      currentTurnId: world.roundActive&&world.turnOrder.length?world.turnOrder[world.turnPtr]:null,
-      log:world.log.slice(-44), chat:world.chat.slice(-44), lootOffers:world.lootOffers },
-    players, playerCount:joined().length, maxPlayers:MAX };
+function inOwnBox(p) {
+  const sideX = p.team === 'red' ? -1 : 1;
+  return p.x * sideX > FIELD.halfL - FIELD.boxDepth && Math.abs(p.z) < FIELD.boxHalfW;
 }
 
-// ── XP / leveling ── tuned so Super(~L10) lands ~stage3-4, Ultra(~L15) ~stage6-7
-function xpToNext(lvl){ return 80 + lvl*35; }
-function grantXp(p,amt){
-  p.xp=(p.xp||0)+amt;
-  while(p.xp>=xpToNext(p.level)){ p.xp-=xpToNext(p.level); p.level++; plog(`✨ ${p.name} reached Level ${p.level}!`,'system'); }
-}
-
-function makePlayer(name,cls,portrait){
-  const base=CLASSES[cls]||SECRET_CLASSES[cls]||CLASSES.warrior;
-  const p={ name, cls:base.id, portrait, tier:0, superKey:null, ultraKey:null,
-    level:1, xp:0, ready:false, status:[], buffs:[],
-    equip:{weapon:null,armor:null,trinket:null},
-    inventory:['hpotion','hpotion','mpotion'], extraTurn:false, hp:0, mp:0 };
-  const st=C.stats(p); p.hp=st.maxHp; p.mp=st.maxMp;
-  return p;
-}
-
-const allReady=()=>{ const j=joined(); return j.length>=1&&j.every(([,s])=>s.player.ready); };
-const allEquip=()=>{ const j=joined(); return j.length>=1&&j.every(([sid])=>world.equipReady[sid]); };
-const allLoot=()=>{ const j=alive(); return j.length===0||j.every(([sid])=>world.lootPicked[sid]); };
-const allChose=()=>{ return joined().every(([sid,s])=> !pendingClassChoice(s.player) || world.classChoice[sid] ); };
-
-function startGame(){ world.phase='equip'; world.stageIdx=0; world.roundIdx=0; world.equipReady={};
-  plog('⚔️ The party gathers. Equip your gear, then descend into '+STAGES[0].name+'!','system'); broadcast(); }
-function beginStage(){ world.phase='equip'; world.equipReady={};
-  plog(`🏰 Entering ${STAGES[world.stageIdx].name}. Gear up!`,'system'); broadcast(); }
-
-// enemy scaling: HP and DAMAGE both scale with party size now
-function partyN(){ return Math.max(1,alive().length); }
-function spawnEnemy(){
-  const stage=STAGES[world.stageIdx]; const def=stage.rounds[world.roundIdx]; const n=partyN();
-  const hpScale = 0.7 + n*0.5;                       // more players = more enemy HP
-  const dmgScale = 0.78 + (n-1)*0.12;                // more players = enemy hits harder
-  const stageHp = Math.min(1,0.82+world.stageIdx*0.045);
-  world.enemy={ name:def.name, sprite:def.sprite,
-    maxHp:Math.floor(def.hp*hpScale*stageHp), hp:Math.floor(def.hp*hpScale*stageHp),
-    atk:Math.round(def.atk*dmgScale), baseAtk:Math.round(def.atk*dmgScale), def:def.def,
-    mechanic:def.mechanic, mechanicDesc:def.desc, boss:!!def.boss,
-    status:[], roundCount:0, phaseLabel:def.boss?'Phase 1':null };
-}
-
-function buildOrder(){ world.turnOrder=alive().map(([sid,s])=>({sid,spd:C.stats(s.player).spd})).sort((a,b)=>b.spd-a.spd).map(o=>o.sid); world.turnPtr=0; }
-
-function enterCombat(){ world.phase='combat'; spawnEnemy();
-  for(const [,s] of alive()){ s.player.status=[]; s.player.buffs=[]; s.player.extraTurn=false; }
-  buildOrder(); world.roundActive=true;
-  const stage=STAGES[world.stageIdx];
-  plog(`Round ${world.roundIdx+1}/${stage.rounds.length}: ${world.enemy.name} appears! (${world.enemy.mechanicDesc})`,'system');
-  announce(); broadcast(); }
-
-function announce(){ if(!world.turnOrder.length) return; const s=sessions.get(world.turnOrder[world.turnPtr]); if(s&&s.player) plog(`🎯 ${s.player.name}'s turn.`,'system'); }
-
-// ── enemy AI ──
-function enemyTurn(){
-  const e=world.enemy; if(!e||e.hp<=0) return; e.roundCount++;
-  const tl=[]; const skip=C.tickStatus(e,true,tl); tl.forEach(l=>plog(l.msg,l.type));
-  if(e.hp<=0){ return; }
-  mechanic(e); if(e.hp<=0) return;
-  if(skip){ plog(`${e.name} is frozen/stunned and cannot act!`,'heal'); return; }
-  let targets=alive(); if(!targets.length) return;
-  const exec=['execute','riftlord','riftlordlite'], drain=['lifesteal','riftlord','riftlordlite'], venom=['poison','riftlord','riftlordlite'];
-  let pick = exec.includes(e.mechanic)
-    ? targets.sort((a,b)=>(a[1].player.hp/C.stats(a[1].player).maxHp)-(b[1].player.hp/C.stats(b[1].player).maxHp))[0]
-    : targets[C.rng(0,targets.length-1)];
-  const tp=pick[1].player; let atk=e.atk;
-  if(exec.includes(e.mechanic)&&tp.hp/C.stats(tp).maxHp<0.4){ atk=Math.floor(atk*1.7); plog(`☠️ ${e.name} moves to EXECUTE ${tp.name}!`,'enemy'); }
-  const raw=atk - C.stats(tp).def + C.rng(-3,6);
-  const res=C.hitPlayer(tp,raw);
-  if(res.dodged) plog(`💨 ${tp.name} dodges ${e.name}'s attack!`,'heal');
-  else { plog(`💥 ${e.name} hits ${tp.name} for ${res.dmg}!`,'enemy');
-    if(drain.includes(e.mechanic)){ const h=Math.floor(res.dmg*0.5); e.hp=Math.min(e.maxHp,e.hp+h); if(h>0) plog(`🩸 ${e.name} drains ${h} HP!`,'enemy'); }
-    if(venom.includes(e.mechanic)) C.addStatus(tp,{type:'poison',rounds:3,power:e.mechanic==='poison'?14:16,stack:true});
-  }
-  if(tp.hp<=0) plog(`💀 ${tp.name} has fallen!`,'system');
-}
-function mechanic(e){
-  switch(e.mechanic){
-    case 'enrage': e.atk=e.baseAtk+Math.round(e.baseAtk*0.12*e.roundCount); if(e.roundCount%2===0){const t=alive(); if(t.length){C.addStatus(t[C.rng(0,t.length-1)][1].player,{type:'weaken',rounds:2}); plog(`🌿 ${e.name} weakens a hero!`,'enemy');}} break;
-    case 'shield': if(e.roundCount%2===1){C.addStatus(e,{type:'shield',power:Math.floor(e.maxHp*0.12),rounds:99}); plog(`🛡️ ${e.name} shields itself!`,'enemy');} break;
-    case 'burn': { alive().forEach(([,s])=>C.addStatus(s.player,{type:'burn',rounds:2,power:14,stack:true})); plog(`🔥 ${e.name} burns the party!`,'enemy'); break; }
-    case 'freeze': { const t=alive(); if(t.length){const v=t[C.rng(0,t.length-1)][1].player; C.addStatus(v,{type:'freeze',rounds:1}); plog(`🧊 ${e.name} freezes ${v.name}!`,'enemy');} break; }
-    case 'burnrage': e.atk=e.baseAtk+Math.round(e.baseAtk*0.1*e.roundCount); alive().forEach(([,s])=>C.addStatus(s.player,{type:'burn',rounds:2,power:16,stack:true})); plog(`🔥 ${e.name} rages and burns all!`,'enemy'); break;
-    case 'freezerage': e.atk=e.baseAtk+Math.round(e.baseAtk*0.1*e.roundCount); { const t=alive(); if(t.length){const v=t[C.rng(0,t.length-1)][1].player; C.addStatus(v,{type:'freeze',rounds:1}); plog(`🧊 ${e.name} freezes ${v.name} and grows stronger!`,'enemy');} } break;
-    case 'riftlordlite': e.atk=e.baseAtk+Math.round(e.baseAtk*0.08*e.roundCount); if(e.roundCount%3===0){alive().forEach(([,s])=>C.addStatus(s.player,{type:'burn',rounds:2,power:14,stack:true})); plog(`🌋 ${e.name} erupts!`,'enemy');} if(e.roundCount%2===0) C.addStatus(e,{type:'shield',power:Math.floor(e.maxHp*0.08),rounds:99}); break;
-    case 'riftlord': { const pct=e.hp/e.maxHp;
-      if(pct<0.33&&e.phaseLabel!=='Phase 3'){e.phaseLabel='Phase 3'; e.atk=Math.round(e.baseAtk*1.5); plog('🌌 THE RIFT LORD ENTERS PHASE 3 — reality collapses!','system'); alive().forEach(([,s])=>C.addStatus(s.player,{type:'burn',rounds:3,power:20,stack:true}));}
-      else if(pct<0.66&&e.phaseLabel==='Phase 1'){e.phaseLabel='Phase 2'; e.atk=Math.round(e.baseAtk*1.25); plog('🌌 The Rift Lord shifts to PHASE 2!','system');}
-      if(e.roundCount%2===0) C.addStatus(e,{type:'shield',power:Math.floor(e.maxHp*0.1),rounds:99}); break; }
+function respawnAll() {
+  let ri = 0, bi = 0;
+  for (const p of players.values()) {
+    const idx = p.team === 'red' ? ri++ : bi++;
+    const s = spawnPoint(p.team, idx, p.role);
+    p.x = s.x; p.z = s.z; p.y = 0;
+    p.forceSpawn = { x: s.x, z: s.z };   // client is told to teleport
   }
 }
-function thorns(p){ const e=world.enemy; if(e&&e.mechanic==='thorns'){ const r=C.hitPlayer(p,Math.floor(C.stats(p).patk*0.3),{trueDmg:true}); if(r.dmg>0) plog(`🪨 Thorns reflect ${r.dmg} onto ${p.name}!`,'enemy'); } }
 
-// ── actions ──
-function doAction(sid,kind,payload){
-  if(world.phase!=='combat'||!world.roundActive) return;
-  if(world.turnOrder[world.turnPtr]!==sid){ const ss=sessions.get(sid); if(ss) sendTo(ss.ws,{type:'toast',msg:'Not your turn!'}); return; }
-  const s=sessions.get(sid); if(!s||!s.player||s.player.hp<=0) return;
-  const p=s.player, e=world.enemy;
-  const tl=[]; const skip=C.tickStatus(p,false,tl); tl.forEach(l=>plog(l.msg,l.type));
-  if(p.hp<=0){ plog(`💀 ${p.name} succumbs!`,'system'); return advanceTurn(); }
-  if(skip){ plog(`${p.name} is frozen/stunned and loses the turn!`,'enemy'); return advanceTurn(); }
-  let lines=[];
-  if(kind==='skill'){
-    const id=payload.skillId; if(id!=='basic' && !liveSkills(p).includes(id)){ sendTo(s.ws,{type:'toast',msg:'Skill not available!'}); return; }
-    const sk=SKILLS[id]; if(!sk) return;
-    if(p.mp<sk.mp){ sendTo(s.ws,{type:'toast',msg:'Not enough MP!'}); return; }
-    p.mp-=sk.mp;
-    const pp=alive().map(([,ss])=>ss.player);
-    lines=C.useSkill(id,p,e,pp,payload.targetId);
-    if(sk.type==='attack') thorns(p);
-  } else if(kind==='item'){
-    const iid=payload.itemId; const idx=p.inventory.indexOf(iid); if(idx===-1){ sendTo(s.ws,{type:'toast',msg:'Item not owned!'}); return; }
-    p.inventory.splice(idx,1); const pp=alive().map(([,ss])=>ss.player); lines=C.useItem(iid,p,e,pp);
-  } else if(kind==='pass'){ const st=C.stats(p); p.mp=Math.min(st.maxMp,p.mp+Math.floor(st.maxMp*0.15)); lines=[{msg:`${p.name} guards and recovers focus.`,type:'system'}]; }
-  lines.forEach(l=>plog(l.msg,l.type));
-  if(e.hp<=0) return defeatEnemy();
-  if(p.extraTurn){ p.extraTurn=false; plog(`⏳ ${p.name} acts again!`,'heal'); return broadcast(); }
-  advanceTurn();
+// ---------- helpers ----------
+function send(ws, msg) { if (ws.readyState === 1) ws.send(JSON.stringify(msg)); }
+function broadcast(msg) { const s = JSON.stringify(msg); for (const ws of sockets.values()) if (ws.readyState === 1) ws.send(s); }
+
+function sanitizeName(n) {
+  n = String(n || '').replace(/[^\w \-\.\[\]]/g, '').trim().slice(0, 16);
+  return n || 'Player' + nextId;
 }
 
-function advanceTurn(){
-  world.turnOrder=world.turnOrder.filter(sid=>{const s=sessions.get(sid); return s&&s.player&&s.player.hp>0;});
-  if(!world.turnOrder.length) return wipe();
-  world.turnPtr++;
-  if(world.turnPtr>=world.turnOrder.length){
-    world.turnPtr=0;
-    // mana regen each round for everyone
-    for(const [,s] of alive()){ const st=C.stats(s.player); s.player.mp=Math.min(st.maxMp,s.player.mp+Math.floor(st.maxMp*0.1)+5); }
-    enemyTurn();
-    if(world.enemy.hp<=0) return defeatEnemy();
-    if(!alive().length) return wipe();
-    buildOrder();
-  }
-  let g=0; while(g++<20){ const sid=world.turnOrder[world.turnPtr]; const s=sessions.get(sid); if(s&&s.player&&s.player.hp>0) break; world.turnPtr=(world.turnPtr+1)%world.turnOrder.length; }
-  announce(); broadcast();
-}
+// ---------- connection ----------
+wss.on('connection', (ws) => {
+  const id = nextId++;
+  ws.isAlive = true;
+  ws.on('pong', () => (ws.isAlive = true));
 
-function defeatEnemy(){
-  const e=world.enemy; if(!e||e.hp>0) return broadcast();
-  world.roundActive=false; plog(`🎉 ${e.name} is defeated!`,'system');
-  const stage=STAGES[world.stageIdx]; const isBoss=world.roundIdx===stage.rounds.length-1;
-  const xp=(e.boss?160:70)+world.stageIdx*22;
-  for(const [,s] of joined()){ const p=s.player; grantXp(p,xp); if(p.hp>0){ const st=C.stats(p); p.hp=Math.min(st.maxHp,p.hp+Math.floor(st.maxHp*0.18)); } }
-  if(isBoss){
-    plog(`💎 Shard recovered from ${stage.name}!`,'system');
-    if(world.stageIdx>=STAGES.length-1){ world.phase='victory'; plog('🏆 ALL SHARDS RESTORED! Aethoria is saved!','system'); return broadcast(); }
-    // class-choice gate before next stage if anyone has a pending choice
-    if(joined().some(([sid,s])=>pendingClassChoice(s.player))){ world.phase='classchoice'; world.classChoice={}; plog('🌟 A surge of power! Heroes may advance their class.','system'); return broadcast(); }
-    world.stageIdx++; world.roundIdx=0; beginStage(); return;
-  }
-  offerLoot();
-}
+  ws.on('message', (raw) => {
+    let m;
+    try { m = JSON.parse(raw); } catch { return; }
+    const p = players.get(id);
 
-function offerLoot(){
-  world.phase='loot'; world.lootOffers={}; world.lootPicked={};
-  const depth=world.stageIdx*5+world.roundIdx;
-  for(const [sid,s] of joined()){
-    if(s.player.hp<=0){ world.lootPicked[sid]=true; continue; }
-    const r=Math.random(); let pool;
-    if(depth>=38) pool = r<0.5?LOOT_RARITY.legendary:LOOT_RARITY.epic;
-    else if(depth>=28) pool = r<0.4?LOOT_RARITY.epic:LOOT_RARITY.rare;
-    else if(depth>=16) pool = r<0.5?LOOT_RARITY.rare:LOOT_RARITY.uncommon;
-    else if(depth>=6) pool = r<0.55?LOOT_RARITY.uncommon:LOOT_RARITY.common;
-    else pool = r<0.7?LOOT_RARITY.common:LOOT_RARITY.uncommon;
-    const choices=[]; const copy=[...pool];
-    while(choices.length<3&&copy.length) choices.push(copy.splice(C.rng(0,copy.length-1),1)[0]);
-    while(choices.length<3){ const c=LOOT_RARITY.common[C.rng(0,LOOT_RARITY.common.length-1)]; if(!choices.includes(c)) choices.push(c); else break; }
-    world.lootOffers[sid]=choices;
-  }
-  plog('💰 Spoils scatter — each hero claims one reward.','system'); broadcast();
-}
-function pickLoot(sid,itemId){ if(world.phase!=='loot'||world.lootPicked[sid]) return;
-  const off=world.lootOffers[sid]||[]; if(!off.includes(itemId)) return;
-  const s=sessions.get(sid); if(!s||!s.player) return;
-  s.player.inventory.push(itemId); world.lootPicked[sid]=true;
-  const it=ITEMS[itemId]; plog(`🎁 ${s.player.name} takes ${it.name}.`,'item');
-  if(allLoot()){ world.roundIdx++; enterCombat(); } else broadcast();
-}
+    switch (m.t) {
+      case 'join': {
+        if (players.has(id)) return;
+        const { red, blue } = teamCounts();
+        let team = red <= blue ? 'red' : 'blue';
+        if ((team === 'red' ? red : blue) >= TEAM_MAX) team = team === 'red' ? 'blue' : 'red';
+        if ((team === 'red' ? red : blue) >= TEAM_MAX) {
+          send(ws, { t: 'full', max: TEAM_MAX });
+          return;
+        }
+        const idx = team === 'red' ? red : blue;
+        const s = spawnPoint(team, idx, 'field');
+        players.set(id, {
+          id, name: sanitizeName(m.name), team,
+          x: s.x, y: 0, z: s.z, yaw: team === 'red' ? Math.PI / 2 : -Math.PI / 2,
+          stunUntil: 0, tackleAt: -99, diveAt: -99, jabAt: -99, rouAt: -99, dragAt: -99,
+          shieldUntil: 0, powerShot: false, lastInputAt: Date.now(),
+          goals: 0, tackles: 0, saves: 0, assists: 0, fouls: 0, role: 'field',
+        });
+        sockets.set(id, ws);
+        send(ws, {
+          t: 'welcome', id, team, field: FIELD,
+          spawn: s, matchLen: MATCH_LEN,
+        });
+        broadcast({ t: 'chat', sys: true, text: `${players.get(id).name} joined ${team.toUpperCase()}` });
+        break;
+      }
 
-function chooseClass(sid,choiceKey){
-  if(world.phase!=='classchoice') return;
-  const s=sessions.get(sid); if(!s||!s.player) return;
-  const p=s.player; const pend=pendingClassChoice(p); if(!pend){ world.classChoice[sid]=true; return checkChoiceDone(); }
-  if(pend.type==='super'){ if(!CLASSES[p.cls].supers[choiceKey]) return; p.superKey=choiceKey; p.tier=1;
-    const st=C.stats(p); p.hp=st.maxHp; p.mp=st.maxMp; plog(`🌟 ${p.name} becomes a ${CLASSES[p.cls].supers[choiceKey].name}!`,'system'); }
-  else if(pend.type==='ultra'){ const ult=CLASSES[p.cls].supers[p.superKey].ultras; if(!ult[choiceKey]) return; p.ultraKey=choiceKey; p.tier=2;
-    const st=C.stats(p); p.hp=st.maxHp; p.mp=st.maxMp; plog(`🌟 ${p.name} ascends into a ${ult[choiceKey].name}!`,'system'); }
-  world.classChoice[sid]=true; checkChoiceDone();
-}
-function checkChoiceDone(){
-  if(allChose()){ world.stageIdx++; world.roundIdx=0; beginStage(); } else broadcast();
-}
+      case 'input': {
+        if (!p) return;
+        // client-authoritative movement, loosely validated
+        const nx = clamp(+m.x || 0, -FIELD.halfL - 1, FIELD.halfL + 1);
+        const nz = clamp(+m.z || 0, -FIELD.halfW - 1, FIELD.halfW + 1);
+        const ny = clamp(+m.y || 0, 0, 6);
+        const dx = nx - p.x, dz = nz - p.z;
+        const d = Math.hypot(dx, dz);
+        if (d > PLAYER.maxStep * 3) {
+          // teleport attempt — pull them back
+          p.forceSpawn = { x: p.x, z: p.z };
+        } else {
+          p.x = nx; p.z = nz; p.y = ny;
+        }
+        p.yaw = +m.yaw || 0;
+        p.pitch = +m.pt || 0;
+        p.anim = m.a | 0; // 0 idle 1 run 2 sprint 3 slide 4 stunned (client-reported, cosmetic)
+        p.lastInputAt = Date.now();
+        break;
+      }
 
-function confirmEquip(sid,skills,equip){
-  const s=sessions.get(sid); if(!s||!s.player) return; const p=s.player;
-  const e={weapon:null,armor:null,trinket:null};
-  for(const slot of ['weapon','armor','trinket']){ const iid=equip&&equip[slot]; if(iid&&ITEMS[iid]&&ITEMS[iid].kind===slot&&p.inventory.includes(iid)) e[slot]=iid; }
-  p.equip=e; world.equipReady[sid]=true; plog(`✅ ${p.name} is ready.`,'system');
-  if(allEquip()){ world.roundIdx=0; enterCombat(); } else broadcast();
-}
+      case 'shoot': {
+        if (!p || game.phase === 'goal' || game.phase === 'matchEnd') return;
+        if (game.phase === 'penalty' && (!game.penalty || game.penalty.takerId !== id)) return;
+        if (nowS() < p.stunUntil) return;
+        const b = game.ball;
+        if (b.owner !== id) return;
+        const isPenalty = game.phase === 'penalty';
+        const power = clamp(+m.power || 0, 0, 1);
+        const pitch = clamp(+m.pitch || 0, -0.5, 1.1);
+        const yaw = +m.yaw || p.yaw;
 
-function wipe(){ world.phase='defeat'; world.roundActive=false; plog('💀 The party has fallen. The Rift consumes all... Press Play Again.','system'); broadcast(); }
-function resetAll(){ world.phase='lobby'; world.stageIdx=0; world.roundIdx=0; world.enemy=null; world.turnOrder=[]; world.turnPtr=0;
-  world.lootOffers={}; world.lootPicked={}; world.equipReady={}; world.classChoice={}; world.roundActive=false; world.log=[];
-  for(const [,s] of joined()){ if(s.player) s.player=makePlayer(s.player.name,s.player.cls,s.player.portrait); }
-  plog('🔄 A new quest begins.','system'); broadcast(); }
+        if (m.pass) {
+          // aim-assisted pass: pick best teammate in a 55° cone toward aim
+          const target = bestPassTarget(p, yaw);
+          if (target) {
+            const dx = target.x - p.x, dz = target.z - p.z;
+            const dist = Math.hypot(dx, dz) || 1;
+            const speed = clamp(8 + dist * 0.9, 10, 24);
+            b.vx = (dx / dist) * speed;
+            b.vz = (dz / dist) * speed;
+            b.vy = clamp(dist * 0.18, 1.5, 6);
+          } else {
+            // no target: firm ground pass along aim
+            const dir = dirFromYaw(yaw);
+            b.vx = dir.x * 14; b.vz = dir.z * 14; b.vy = 2;
+          }
+        } else if (m.chip) {
+          // chip / lob: floats it over the keeper, drops fast
+          const dir = dirFromYaw(yaw);
+          const speed = 9 + power * 11;
+          b.vx = dir.x * speed;
+          b.vz = dir.z * speed;
+          b.vy = 7 + power * 7;
+          b.spin = clamp(+m.curve || 0, -1, 1) * 0.4;
+        } else {
+          const dir = dirFromYaw(yaw);
+          let speed = 10 + power * 24;
+          if (p.powerShot) {                     // powerup: one supercharged strike
+            speed = Math.min(speed * 1.45, 46);
+            p.powerShot = false;
+            broadcast({ t: 'fx', kind: 'powershot', id });
+          }
+          // fly exactly where you're looking (slightly-down driven shots allowed)
+          const fy = clamp(Math.sin(pitch), -0.15, 0.95);
+          const fh = Math.sqrt(1 - fy * fy);
+          b.vx = dir.x * fh * speed;
+          b.vz = dir.z * fh * speed;
+          b.vy = fy * speed + 0.3;
+          // curl: sidespin bends the ball mid-flight (Magnus effect)
+          const curve = clamp(+m.curve || 0, -1, 1);
+          b.spin = curve * (0.7 + power * 0.9);
+        }
+        if (m.pass) b.spin = 0;
+        b.owner = null;
+        b.noPickup[id] = nowS() + PLAYER.shootLockout;
+        b.lastKick = { id, at: nowS() };
+        if (m.pass) b.passFrom = { id, team: p.team, at: nowS() };
+        else b.passFrom = null;
+        b.x = p.x + dirFromYaw(yaw).x * (BALL.carryDist + 0.2);
+        b.z = p.z + dirFromYaw(yaw).z * (BALL.carryDist + 0.2);
+        b.y = Math.max(b.y, BALL.r + 0.05);
+        broadcast({ t: 'fx', kind: m.pass ? 'pass' : 'shoot', id, power });
+        if (isPenalty) { game.phase = 'play'; game.penalty = null; }   // ball is live — rebounds count
+        break;
+      }
 
-setInterval(()=>{ const now=Date.now();
-  for(const [sid,s] of sessions){ if(now-s.lastSeen>TTL||s.ws.readyState!==WebSocket.OPEN){ const nm=s.player?s.player.name:'A hero'; sessions.delete(sid); if(world.turnOrder.includes(sid)) world.turnOrder=world.turnOrder.filter(x=>x!==sid); plog(`🚪 ${nm} left.`,'system'); broadcast(); } }
-},30000);
+      case 'tackle': {
+        if (!p || game.phase !== 'play') return;
+        const t = nowS();
+        if (t < p.stunUntil || t - p.tackleAt < PLAYER.tackleCooldown) return;
+        p.tackleAt = t;
+        const dir = dirFromYaw(+m.yaw || p.yaw);
+        let hit = null;
+        for (const q of players.values()) {
+          if (q.id === id || q.team === p.team) continue;
+          const dx = q.x - p.x, dz = q.z - p.z;
+          const d = Math.hypot(dx, dz);
+          if (d > PLAYER.tackleRange) continue;
+          const cos = (dx * dir.x + dz * dir.z) / (d || 1);
+          if (cos < PLAYER.tackleCos) continue;
+          if (!hit || d < hit.d) hit = { q, d };
+        }
+        broadcast({ t: 'fx', kind: 'tackle', id });
+        if (hit && nowS() < hit.q.shieldUntil) hit = null;   // roulette i-frames: you slid at air
+        if (hit) {
+          const q = hit.q;
+          q.stunUntil = t + PLAYER.stunTime;
+          send(sockets.get(q.id), { t: 'stunned', dur: PLAYER.stunTime, by: p.name });
+          if (game.ball.owner === q.id) {
+            const b = game.ball;
+            b.owner = null;
+            b.noPickup[q.id] = t + 1.0;      // victim can't instantly re-grab
+            const pop = dirFromYaw(p.yaw);
+            b.vx = pop.x * 6 + (Math.random() - 0.5) * 3;
+            b.vz = pop.z * 6 + (Math.random() - 0.5) * 3;
+            b.vy = 3;
+            p.tackles++;
+            broadcast({ t: 'chat', sys: true, text: `${p.name} dispossessed ${q.name}!` });
+          } else {
+            // FOUL: sliding into a player who doesn't have the ball takes you both down
+            p.fouls++;
+            p.stunUntil = t + PLAYER.stunTime;
+            send(sockets.get(id), { t: 'stunned', dur: PLAYER.stunTime, by: 'the referee (foul!)' });
+            broadcast({ t: 'chat', sys: true, text: `FOUL! ${p.name} scythes down ${q.name} off the ball` });
+            if (inOwnBox(p)) {
+              broadcast({ t: 'chat', sys: true, text: `…and it's in the box. PENALTY to ${q.team.toUpperCase()}!` });
+              startPenalty(q.team, q.id);
+            }
+          }
+        } else {
+          // whiffed slide: you're committed — eat turf for a moment
+          p.stunUntil = t + 0.7;
+          send(sockets.get(id), { t: 'stunned', dur: 0.7, by: 'a missed slide' });
+        }
+        break;
+      }
 
-wss.on('connection',ws=>{
-  if(sessions.size>=MAX){ sendTo(ws,{type:'full',maxPlayers:MAX}); ws.close(); return; }
-  const sid=uuidv4(); sessions.set(sid,{ws,player:null,lastSeen:Date.now()});
-  sendTo(ws,{type:'init',sessionId:sid,maxPlayers:MAX}); sendTo(ws,snapshot());
-  ws.on('message',raw=>{ try{
-    let m; try{m=JSON.parse(raw);}catch{return;}
-    const s=sessions.get(sid); if(!s) return; s.lastSeen=Date.now();
-    switch(m.type){
-      case 'join': { if(!m.name||!(CLASSES[m.cls]||SECRET_CLASSES[m.cls])) return; s.player=makePlayer(String(m.name).slice(0,22),m.cls,m.portrait||''); plog(`⚔️ ${s.player.name} the ${nodeOf(s.player).name} joins!`,'system'); broadcast(); break; }
-      case 'ready': { if(!s.player||world.phase!=='lobby') return; s.player.ready=!s.player.ready; broadcast(); break; }
-      case 'start': { if(world.phase!=='lobby'||!allReady()){ sendTo(ws,{type:'toast',msg:'All heroes must be ready!'}); return; } startGame(); break; }
-      case 'equip': { if(world.phase!=='equip') return; confirmEquip(sid,m.skills,m.equip); break; }
-      case 'choose': { chooseClass(sid,m.choice); break; }
-      case 'action': { doAction(sid,m.kind,m.payload||{}); break; }
-      case 'loot': { pickLoot(sid,m.itemId); break; }
-      case 'chat': { if(!s.player||!m.text) return; world.chat.push({name:s.player.name,msg:String(m.text).slice(0,200),ts:Date.now()}); if(world.chat.length>90) world.chat.shift(); broadcast(); break; }
-      case 'reset': { if(s.player) resetAll(); break; }
-      case 'ping': sendTo(ws,{type:'pong'}); break;
+      case 'bicycle': {
+        // bicycle kick ATTEMPT: jump, then a well-timed click starts the flip.
+        // You commit blind — a live hitbox tracks the ball for ~0.75s. Connect and it
+        // rockets over your head, BEHIND you (face away from where you want to score).
+        // Miss and you hit the turf like a whiffed slide.
+        if (!p || (game.phase !== 'play' && game.phase !== 'kickoff')) return;
+        const t = nowS();
+        if (t < p.stunUntil || t - (p.bikeAt || -99) < 1.3) return;
+        if (game.ball.owner === id) return;               // you chip it, not overhead-kick your own feet
+        p.bikeAt = t;
+        p.bicycleUntil = t + 0.75;
+        p.bicycleHit = false;
+        p.bicycleYaw = +m.yaw || p.yaw;
+        p.bicyclePitch = clamp(+m.pitch || 0, -0.3, 1.1);
+        p.bicycleCurve = clamp(+m.curve || 0, -1, 1);
+        broadcast({ t: 'fx', kind: 'bikestart', id });
+        break;
+      }
+
+      case 'flick': {
+        // rainbow flick: pop the ball over a defender, keep running onto it
+        if (!p || game.phase !== 'play') return;
+        const t = nowS();
+        if (t < p.stunUntil) return;
+        const b = game.ball;
+        if (b.owner !== id) return;
+        const dir = dirFromYaw(p.yaw);
+        b.owner = null;
+        b.vx = dir.x * 6;
+        b.vz = dir.z * 6;
+        b.vy = 9.2;      // +50%% peak height vs the old 7.5 (apex ~1.9m — sails over heads)
+        b.spin = 0;
+        // opponents can't snatch it out of the air — you keep the advantage
+        for (const q of players.values()) {
+          b.noPickup[q.id] = t + (q.id === id ? 0.25 : 0.6);
+        }
+        broadcast({ t: 'fx', kind: 'flick', id });
+        break;
+      }
+
+      case 'role': {
+        if (!p) return;
+        if (m.gk) {
+          const cur = teamGk(p.team);
+          if (cur && cur.id !== id) {
+            send(ws, { t: 'chat', sys: true, text: `${cur.name} is already ${p.team.toUpperCase()}'s keeper` });
+            return;
+          }
+          if (p.role !== 'gk') {
+            p.role = 'gk';
+            broadcast({ t: 'chat', sys: true, text: `${p.name} is now ${p.team.toUpperCase()}'s GOALKEEPER 🧤` });
+          }
+        } else if (p.role === 'gk') {
+          p.role = 'field';
+          broadcast({ t: 'chat', sys: true, text: `${p.name} left the goal — ${p.team.toUpperCase()} needs a keeper!` });
+        }
+        break;
+      }
+
+      case 'dive': {
+        // goalkeeper dive: catch loose balls in your box, punch them clear outside it,
+        // and smother the ball off a carrier's feet (they go down)
+        if (!p || p.role !== 'gk' || (game.phase !== 'play' && game.phase !== 'kickoff')) return;
+        const t = nowS();
+        if (t < p.stunUntil || t - p.diveAt < GK.diveCooldown) return;
+        p.diveAt = t;
+        broadcast({ t: 'fx', kind: 'dive', id });
+        const b = game.ball;
+        const d = Math.hypot(b.x - p.x, b.z - p.z);
+
+        if (b.owner == null) {
+          if (d < GK.diveRange && b.y < GK.catchMaxY) {
+            const speed = Math.hypot(b.vx, b.vy, b.vz);
+            if (game.phase === 'kickoff') game.phase = 'play';
+            if (inOwnBox(p) && speed < GK.parrySpeed) {
+              // clean catch
+              b.owner = id; b.vx = b.vy = b.vz = 0; b.spin = 0;
+              p.saves++;
+              broadcast({ t: 'fx', kind: 'catch', id });
+              broadcast({ t: 'chat', sys: true, text: `WHAT A SAVE by ${p.name}!` });
+            } else {
+              // parry / punch clear
+              const dir = dirFromYaw(+m.yaw || p.yaw);
+              b.vx = dir.x * 20; b.vz = dir.z * 20; b.vy = 7; b.spin = 0;
+              b.noPickup[id] = t + 0.4;
+              p.saves++;
+              broadcast({ t: 'fx', kind: 'punch', id });
+              broadcast({ t: 'chat', sys: true, text: `${p.name} punches it clear!` });
+            }
+          }
+        } else {
+          // smother the ball off an opponent's feet
+          const q = players.get(b.owner);
+          if (q && q.team !== p.team) {
+            const dq = Math.hypot(q.x - p.x, q.z - p.z);
+            if (dq < 3.0) {
+              q.stunUntil = t + PLAYER.stunTime;
+              send(sockets.get(q.id), { t: 'stunned', dur: PLAYER.stunTime, by: p.name });
+              b.owner = id; b.vx = b.vy = b.vz = 0; b.spin = 0;
+              b.noPickup[q.id] = t + 1.0;
+              p.saves++;
+              broadcast({ t: 'chat', sys: true, text: `${p.name} smothers it at ${q.name}'s feet!` });
+            }
+          }
+        }
+        break;
+      }
+
+      case 'jab': {
+        // quick foot poke: shorter range than the slide, no recoil, fast cooldown
+        if (!p || (game.phase !== 'play' && game.phase !== 'kickoff')) return;
+        const t = nowS();
+        if (t < p.stunUntil || t - p.jabAt < JAB.cooldown) return;
+        p.jabAt = t;
+        const dir = dirFromYaw(+m.yaw || p.yaw);
+        broadcast({ t: 'fx', kind: 'jab', id });
+        const b = game.ball;
+        // poke the ball off a carrier's toes
+        let done = false;
+        for (const q of players.values()) {
+          if (q.id === id || q.team === p.team) continue;
+          if (t < q.shieldUntil) continue;                 // roulette shield
+          const dx = q.x - p.x, dz = q.z - p.z;
+          const d = Math.hypot(dx, dz);
+          if (d > JAB.range) continue;
+          const cos = (dx * dir.x + dz * dir.z) / (d || 1);
+          if (cos < JAB.cos) continue;
+          if (b.owner === q.id) {
+            b.owner = null;
+            b.noPickup[q.id] = t + 0.6;                    // no stun — just the ball, cleanly
+            b.vx = dir.x * 5 + (Math.random() - 0.5) * 2;
+            b.vz = dir.z * 5 + (Math.random() - 0.5) * 2;
+            b.vy = 0.8;
+            p.tackles++;
+            broadcast({ t: 'chat', sys: true, text: `${p.name} pokes it off ${q.name}'s toes` });
+            done = true;
+          }
+          break;
+        }
+        // or poke a loose ball ahead of you
+        if (!done && b.owner == null) {
+          const d = Math.hypot(b.x - p.x, b.z - p.z);
+          const cos = d > 0 ? ((b.x - p.x) * dir.x + (b.z - p.z) * dir.z) / d : 1;
+          if (d < JAB.range && b.y < 1.2 && cos > JAB.cos) {
+            if (game.phase === 'kickoff') game.phase = 'play';
+            b.vx = dir.x * 9; b.vz = dir.z * 9; b.vy = 0.5;
+            b.lastKick = { id, at: t };
+          }
+        }
+        break;
+      }
+
+      case 'roulette': {
+        // 360 spin: 0.7s of tackle/jab immunity while you carry
+        if (!p || game.phase !== 'play') return;
+        const t = nowS();
+        if (t < p.stunUntil || t - p.rouAt < 3 || game.ball.owner !== id) return;
+        p.rouAt = t;
+        p.shieldUntil = t + 0.7;
+        broadcast({ t: 'fx', kind: 'roulette', id });
+        break;
+      }
+
+      case 'dragback': {
+        // pull the ball back behind you — reverse direction tech
+        if (!p || game.phase !== 'play') return;
+        const t = nowS();
+        if (t < p.stunUntil || t - p.dragAt < 1 || game.ball.owner !== id) return;
+        p.dragAt = t;
+        const b = game.ball;
+        const dir = dirFromYaw(p.yaw);
+        b.owner = null;
+        b.vx = -dir.x * 4.5; b.vz = -dir.z * 4.5; b.vy = 1.2; b.spin = 0;
+        // you need the beat it takes to spin around — that's the tech
+        for (const q of players.values()) b.noPickup[q.id] = t + (q.id === id ? 0.35 : 0.6);
+        broadcast({ t: 'fx', kind: 'dragback', id });
+        break;
+      }
+
+      case 'chat': {
+        if (!p) return;
+        const text = String(m.text || '').slice(0, 120).trim();
+        if (text) broadcast({ t: 'chat', name: p.name, team: p.team, text });
+        break;
+      }
     }
-  }catch(err){ console.error('[msg handler]',err&&err.stack||err); } });
-  ws.on('close',()=>{ try{
-    const s=sessions.get(sid); const nm=s&&s.player?s.player.name:'A hero'; sessions.delete(sid);
-    if(world.turnOrder.includes(sid)){ const wasTurn=world.turnOrder[world.turnPtr]===sid; world.turnOrder=world.turnOrder.filter(x=>x!==sid); if(world.turnPtr>=world.turnOrder.length) world.turnPtr=0; if(world.phase==='combat'&&world.roundActive){ if(!world.turnOrder.length) return wipe(); if(wasTurn) announce(); } }
-    delete world.lootPicked[sid]; delete world.equipReady[sid]; delete world.lootOffers[sid]; delete world.classChoice[sid];
-    if(world.phase==='loot'&&allLoot()){ world.roundIdx++; return enterCombat(); }
-    if(world.phase==='equip'&&allEquip()&&joined().length){ world.roundIdx=0; return enterCombat(); }
-    if(world.phase==='classchoice'&&allChose()&&joined().length){ world.stageIdx++; world.roundIdx=0; return beginStage(); }
-    plog(`🚪 ${nm} left.`,'system'); broadcast();
-  }catch(err){ console.error('[close handler]',err&&err.stack||err); } });
-  ws.on('error',()=>{});
+  });
+
+  ws.on('close', () => {
+    const p = players.get(id);
+    if (p) broadcast({ t: 'chat', sys: true, text: `${p.name} left` });
+    if (game.ball.owner === id) game.ball.owner = null;
+    players.delete(id);
+    sockets.delete(id);
+  });
 });
 
-app.use(express.static(path.join(__dirname,'public')));
-app.get('*',(_q,r)=>r.sendFile(path.join(__dirname,'public','index.html')));
-server.listen(PORT,()=>console.log(`⚔️  Eternal Quest on :${PORT}`));
+// keepalive (Render idles quiet sockets)
+setInterval(() => {
+  for (const ws of wss.clients) {
+    if (!ws.isAlive) { ws.terminate(); continue; }
+    ws.isAlive = false;
+    ws.ping();
+  }
+}, 25000);
+
+// ---------- math ----------
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+function nowS() { return Date.now() / 1000; }
+function dirFromYaw(yaw) { return { x: -Math.sin(yaw), z: -Math.cos(yaw) }; } // matches three.js camera forward
+
+function bestPassTarget(p, yaw) {
+  const dir = dirFromYaw(yaw);
+  let best = null, bestScore = -1;
+  for (const q of players.values()) {
+    if (q.id === p.id || q.team !== p.team) continue;
+    const dx = q.x - p.x, dz = q.z - p.z;
+    const d = Math.hypot(dx, dz);
+    if (d < 2 || d > 45) continue;
+    const cos = (dx * dir.x + dz * dir.z) / d;
+    if (cos < Math.cos((55 * Math.PI) / 180)) continue;
+    const score = cos * 2 - d / 45;
+    if (score > bestScore) { bestScore = score; best = q; }
+  }
+  return best;
+}
+
+// ---------- simulation ----------
+function stepBall() {
+  const b = game.ball;
+  const t = nowS();
+
+  // possession carry
+  if (b.owner != null) {
+    const p = players.get(b.owner);
+    if (!p || t < p.stunUntil) { b.owner = null; }
+    else {
+      const dir = dirFromYaw(p.yaw);
+      const carry = p.anim === 2 ? BALL.carryDist + 0.7 : BALL.carryDist; // sprint = knock-on
+      b.x = p.x + dir.x * carry;
+      b.z = p.z + dir.z * carry;
+      b.y = p.role === 'gk' ? 1.05 : BALL.r;   // keepers hold it in their hands
+      b.vx = b.vy = b.vz = 0;
+      b.spin = 0;
+      // dropped if carried out over the line somehow
+      keepBallInArena(b);
+      return;
+    }
+  }
+
+  // free ball physics
+  b.vy += BALL.gravity * DT;
+
+  // Magnus effect: sidespin bends the flight path
+  if (Math.abs(b.spin) > 0.01) {
+    const sp = Math.hypot(b.vx, b.vz);
+    if (sp > 2) {
+      const a = 0.15 * b.spin * Math.min(sp, 32);   // lateral accel, m/s²
+      const px = -b.vz / sp, pz = b.vx / sp;        // unit perpendicular
+      b.vx += px * a * DT;
+      b.vz += pz * a * DT;
+    }
+    b.spin *= 0.995;
+  }
+
+  b.x += b.vx * DT;
+  b.y += b.vy * DT;
+  b.z += b.vz * DT;
+
+  // ground
+  if (b.y < BALL.r) {
+    b.y = BALL.r;
+    if (Math.abs(b.vy) > 1.2) { b.vy = -b.vy * BALL.groundRest; b.spin *= 0.6; }
+    else b.vy = 0;
+    b.vx *= BALL.rollFriction;
+    b.vz *= BALL.rollFriction;
+  } else {
+    b.vx *= BALL.airDrag;
+    b.vz *= BALL.airDrag;
+  }
+
+  keepBallInArena(b);
+
+  // aerial contact: headers and mid-flip bicycle kicks
+  if (b.owner == null && (game.phase === 'play' || game.phase === 'kickoff')) {
+    for (const p of players.values()) {
+      if ((b.noPickup[p.id] || 0) > t) continue;
+      if (t < p.stunUntil) continue;
+
+      // BICYCLE: flip in progress — hitbox is a bubble around the flipping body
+      if (p.bicycleUntil > t && !p.bicycleHit) {
+        const dh = Math.hypot(b.x - p.x, b.z - p.z);
+        if (dh < 2.3 && b.y > 0.45 && b.y < 3.5) {
+          p.bicycleHit = true;
+          if (game.phase === 'kickoff') game.phase = 'play';
+          const f = dirFromYaw(p.bicycleYaw);
+          const speed = 30;
+          const fy = clamp(0.28 + Math.sin(p.bicyclePitch) * 0.45, 0.18, 0.8);
+          const fh = Math.sqrt(1 - fy * fy);
+          b.vx = -f.x * fh * speed;                  // over the head — opposite to facing
+          b.vz = -f.z * fh * speed;
+          b.vy = fy * speed;
+          b.spin = p.bicycleCurve * 0.8;
+          b.noPickup[p.id] = t + PLAYER.shootLockout;
+          b.lastKick = { id: p.id, at: t };
+          broadcast({ t: 'fx', kind: 'bicycle', id: p.id });
+          broadcast({ t: 'chat', sys: true, text: `${p.name} with the BICYCLE KICK!` });
+          continue;
+        }
+      }
+
+      // HEADER: airborne player whose head meets the ball nods it where they look
+      if (p.y > 0.12 && b.y > 1.1 && t - (p.headAt || -99) > PLAYER.headCooldown) {
+        const hx = p.x, hy = p.y + 1.62, hz = p.z;
+        const d3 = Math.hypot(b.x - hx, b.y - hy, b.z - hz);
+        if (d3 < PLAYER.headRange) {
+          p.headAt = t;
+          if (game.phase === 'kickoff') game.phase = 'play';
+          const dir = dirFromYaw(p.yaw);
+          const incoming = Math.hypot(b.vx, b.vy, b.vz);
+          const speed = clamp(11 + incoming * 0.5, 12, 27);
+          const fy = clamp(Math.sin(p.pitch || 0), -0.1, 0.85);
+          const fh = Math.sqrt(1 - fy * fy);
+          b.vx = dir.x * fh * speed;
+          b.vz = dir.z * fh * speed;
+          b.vy = fy * speed + 1;
+          b.spin = 0;
+          b.noPickup[p.id] = t + 0.4;
+          b.lastKick = { id: p.id, at: t };
+          broadcast({ t: 'fx', kind: 'header', id: p.id });
+        }
+      }
+    }
+  }
+
+  // players kick loose balls around / pick up
+  if (game.phase === 'play' || game.phase === 'kickoff' || game.phase === 'penalty') {
+    let nearest = null, nd = 1e9;
+    for (const p of players.values()) {
+      if (game.phase === 'penalty' && (!game.penalty || p.id !== game.penalty.takerId)) continue;
+      if (t < p.stunUntil) continue;
+      if ((b.noPickup[p.id] || 0) > t) continue;
+      const d = Math.hypot(p.x - b.x, p.z - b.z);
+      // keepers get longer reach + can take high balls inside their own box
+      const gkBonus = p.role === 'gk' && inOwnBox(p);
+      const range = gkBonus ? GK.catchRange : BALL.pickupRange;
+      const maxY = gkBonus ? GK.catchMaxY : 1.6;
+      const maxSpd = gkBonus ? GK.parrySpeed : 26;
+      if (d < range && b.y < maxY && Math.hypot(b.vx, b.vz) < maxSpd && d < nd) { nd = d; nearest = p; }
+    }
+    if (nearest) {
+      if (game.phase === 'kickoff') game.phase = 'play';
+      const shotSpeed = Math.hypot(b.vx, b.vy, b.vz);
+      b.owner = nearest.id;
+      // a completed pass to a teammate sets up a potential assist
+      if (b.passFrom && b.passFrom.id !== nearest.id && b.passFrom.team === nearest.team
+          && t - b.passFrom.at < 6) {
+        b.assistFrom = { id: b.passFrom.id, at: t };
+      } else if (!b.passFrom || b.passFrom.team !== nearest.team) {
+        b.assistFrom = null;   // interception kills the assist chain
+      }
+      b.passFrom = null;
+      if (nearest.role === 'gk' && inOwnBox(nearest) && shotSpeed > 8) {
+        nearest.saves++;
+        broadcast({ t: 'fx', kind: 'catch', id: nearest.id });
+        broadcast({ t: 'chat', sys: true, text: `${nearest.name} gathers it — safe hands!` });
+      } else {
+        broadcast({ t: 'fx', kind: 'trap', id: nearest.id });
+      }
+    }
+  }
+
+  // goal check
+  if (game.phase === 'play') {
+    const inMouth = Math.abs(b.z) < FIELD.goalHalfW && b.y < FIELD.goalH;
+    if (inMouth && b.x < -FIELD.halfL - BALL.r) scoreGoal('blue');
+    else if (inMouth && b.x > FIELD.halfL + BALL.r) scoreGoal('red');
+  }
+
+  // expire noPickup entries
+  for (const k in b.noPickup) if (b.noPickup[k] < t) delete b.noPickup[k];
+}
+
+function keepBallInArena(b) {
+  const inMouth = Math.abs(b.z) < FIELD.goalHalfW && b.y < FIELD.goalH;
+  const xLimit = inMouth ? FIELD.halfL + FIELD.goalDepth - BALL.r : FIELD.halfL - BALL.r;
+
+  if (b.x < -xLimit) { b.x = -xLimit; b.vx = Math.abs(b.vx) * BALL.wallRest; }
+  if (b.x > xLimit) { b.x = xLimit; b.vx = -Math.abs(b.vx) * BALL.wallRest; }
+  if (b.z < -(FIELD.halfW - BALL.r)) { b.z = -(FIELD.halfW - BALL.r); b.vz = Math.abs(b.vz) * BALL.wallRest; }
+  if (b.z > FIELD.halfW - BALL.r) { b.z = FIELD.halfW - BALL.r; b.vz = -Math.abs(b.vz) * BALL.wallRest; }
+  if (b.y > FIELD.wallH * 2.5) { b.y = FIELD.wallH * 2.5; b.vy = -Math.abs(b.vy) * 0.5; }
+}
+
+function scoreGoal(team) {
+  game.score[team]++;
+  const b = game.ball;
+  let scorer = null;
+  if (b.lastKick && nowS() - b.lastKick.at < 8) scorer = players.get(b.lastKick.id) || null;
+  if (scorer && scorer.team !== team) scorer = null;   // own goals stay anonymous
+  if (scorer) scorer.goals++;
+  let assister = null;
+  if (scorer && b.assistFrom && b.assistFrom.id !== scorer.id && nowS() - b.assistFrom.at < 10) {
+    assister = players.get(b.assistFrom.id) || null;
+    if (assister && assister.team === team) assister.assists++;
+    else assister = null;
+  }
+  b.assistFrom = null;
+  game.lastScorer = scorer ? scorer.name : null;
+  game.phase = 'goal';
+  game.phaseT = GOAL_PAUSE;
+  broadcast({
+    t: 'goal', team, score: game.score,
+    scorer: game.lastScorer,
+    assist: assister ? assister.name : null,
+  });
+}
+
+function stepPads() {
+  if (game.phase !== 'play' && game.phase !== 'kickoff') return;
+  const t = nowS();
+  for (const pad of game.pads) {
+    if (!pad.active) {
+      if (t >= pad.respawnAt) {
+        pad.active = true;
+        pad.k = PAD_KINDS[(Math.random() * PAD_KINDS.length) | 0];
+      }
+      continue;
+    }
+    for (const p of players.values()) {
+      if (t < p.stunUntil) continue;
+      if (Math.hypot(p.x - pad.x, p.z - pad.z) < 1.4) {
+        pad.active = false;
+        pad.respawnAt = t + PAD_RESPAWN;
+        const sock = sockets.get(p.id);
+        if (pad.k === 'speed') send(sock, { t: 'buff', kind: 'speed', dur: 5 });
+        else if (pad.k === 'stamina') send(sock, { t: 'buff', kind: 'stamina', dur: 6 });
+        else { p.powerShot = true; send(sock, { t: 'buff', kind: 'power' }); }
+        broadcast({ t: 'fx', kind: 'pad', id: p.id, padKind: pad.k });
+        break;
+      }
+    }
+  }
+}
+
+function stepPhase() {
+  const anyone = players.size > 0;
+  switch (game.phase) {
+    case 'kickoff':
+      game.phaseT -= DT;
+      if (game.phaseT <= 0) game.phase = 'play';
+      break;
+    case 'play':
+      if (anyone && !game.golden) game.clock -= DT;
+      if (game.clock <= 0 && !game.golden) {
+        game.clock = 0;
+        const s = game.score;
+        if (s.red === s.blue) {
+          game.golden = true;                       // sudden death — next goal wins
+          broadcast({ t: 'golden' });
+        } else {
+          game.phase = 'matchEnd';
+          game.phaseT = MATCH_END_PAUSE;
+          broadcast({ t: 'matchEnd', score: s, result: s.red > s.blue ? 'RED WINS' : 'BLUE WINS' });
+        }
+      }
+      break;
+    case 'penalty':
+      game.phaseT -= DT;
+      if (game.phaseT <= 0) { game.phase = 'play'; game.penalty = null; }
+      break;
+    case 'goal':
+      game.phaseT -= DT;
+      if (game.phaseT <= 0) {
+        if (game.golden) {                          // golden goal decided it
+          const sc = game.score;
+          game.phase = 'matchEnd';
+          game.phaseT = MATCH_END_PAUSE;
+          broadcast({ t: 'matchEnd', score: sc,
+            result: (sc.red > sc.blue ? 'RED WINS' : 'BLUE WINS') + ' — GOLDEN GOAL' });
+        } else {
+          game.ball = resetBall();
+          respawnAll();
+          game.phase = 'kickoff';
+          game.phaseT = KICKOFF_PAUSE;
+          broadcast({ t: 'kickoff' });
+        }
+      }
+      break;
+    case 'matchEnd':
+      game.phaseT -= DT;
+      if (game.phaseT <= 0) {
+        game.golden = false;
+        game.penalty = null;
+        game.score = { red: 0, blue: 0 };
+        game.clock = MATCH_LEN;
+        game.ball = resetBall();
+        for (const p of players.values()) { p.goals = 0; p.tackles = 0; p.saves = 0; p.assists = 0; p.fouls = 0; }
+        respawnAll();
+        game.phase = 'kickoff';
+        game.phaseT = KICKOFF_PAUSE;
+        broadcast({ t: 'kickoff' });
+      }
+      break;
+  }
+}
+
+// ---------- broadcast loop ----------
+setInterval(() => {
+  stepPhase();
+  stepPads();
+  stepBall();
+
+  // missed bicycle kicks leave you on the ground, same as a whiffed slide
+  const tNow = nowS();
+  for (const p of players.values()) {
+    if (p.bicycleUntil && tNow > p.bicycleUntil && !p.bicycleHit && !p.bicycleJudged) {
+      p.bicycleJudged = true;
+      p.stunUntil = tNow + 0.7;
+      send(sockets.get(p.id), { t: 'stunned', dur: 0.7, by: 'a missed bicycle kick' });
+    }
+    if (p.bicycleUntil && tNow > p.bicycleUntil + 1) { p.bicycleUntil = 0; p.bicycleJudged = false; }
+  }
+
+  // free up 5v5 slots held by dead/idle connections
+  const nowMs = Date.now();
+  for (const [pid, p] of players) {
+    if (nowMs - p.lastInputAt > 90000) {
+      broadcast({ t: 'chat', sys: true, text: `${p.name} timed out` });
+      const sock = sockets.get(pid);
+      if (sock) { try { sock.close(); } catch (e) {} }
+      if (game.ball.owner === pid) game.ball.owner = null;
+      players.delete(pid);
+      sockets.delete(pid);
+    }
+  }
+
+  const list = [];
+  for (const p of players.values()) {
+    const e = {
+      i: p.id, n: p.name, tm: p.team,
+      x: +p.x.toFixed(2), y: +p.y.toFixed(2), z: +p.z.toFixed(2),
+      yw: +p.yaw.toFixed(2), a: p.anim || 0,
+      g: p.goals, tk: p.tackles, sv: p.saves, as: p.assists,
+      r: p.role === 'gk' ? 1 : 0,
+      st: nowS() < p.stunUntil ? 1 : 0,
+    };
+    if (p.forceSpawn) { e.fs = p.forceSpawn; p.forceSpawn = null; }
+    list.push(e);
+  }
+  const b = game.ball;
+  broadcast({
+    t: 's',
+    ph: game.phase,
+    ck: Math.ceil(game.clock),
+    gg: game.golden ? 1 : 0,
+    pd: game.pads.map(pd => ({ x: pd.x, z: pd.z, k: pd.active ? pd.k : 0 })),
+    sc: game.score,
+    b: { x: +b.x.toFixed(2), y: +b.y.toFixed(2), z: +b.z.toFixed(2), o: b.owner },
+    p: list,
+  });
+}, 1000 / TICK_HZ);
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => console.log(`Kickoff Arena on :${PORT}`));

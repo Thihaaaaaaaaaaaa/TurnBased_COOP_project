@@ -1,18 +1,16 @@
 {
-  "name": "eternal-quest-multiplayer",
+  "name": "kickoff-arena",
   "version": "1.0.0",
-  "description": "8-player co-op RPG with photo upload characters",
+  "description": "Multiplayer first-person 3D soccer over WebSockets",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
-  },
-  "dependencies": {
-    "express": "^4.18.2",
-    "uuid": "^9.0.0",
-    "ws": "^8.16.0"
+    "start": "node server.js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.18.0"
   }
 }
